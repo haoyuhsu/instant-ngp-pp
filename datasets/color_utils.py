@@ -62,8 +62,17 @@ def read_normal(norm_path, norm_wh):
     
     return norm, norm_up.reshape(-1)
 
+# def read_semantic(sem_path, sem_wh, classes=7):
+#     label = imageio.imread(sem_path).astype(np.uint64)
+
+#     label = cv2.resize(label, sem_wh)
+#     label = rearrange(label, 'h w -> (h w)')
+    
+#     # import ipdb; ipdb.set_trace()
+#     return label
+
 def read_semantic(sem_path, sem_wh, classes=7):
-    label = imageio.imread(sem_path).astype(np.uint64)
+    label = np.load(sem_path).astype(np.float32)
 
     label = cv2.resize(label, sem_wh)
     label = rearrange(label, 'h w -> (h w)')

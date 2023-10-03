@@ -6,7 +6,8 @@ from .nerf import NeRFDataset
 from .nerfpp import NeRFPPDataset
 from .kitti360 import KittiDataset
 from .mega_nerf.dataset import MegaDataset
-
+from .mipnerf360 import MipNeRF360Dataset
+from .lerf import LeRFDataset
 
 dataset_dict = {'nerf': NeRFDataset,
                 'nsvf': NSVFDataset,
@@ -15,5 +16,7 @@ dataset_dict = {'nerf': NeRFDataset,
                 'tnt': tntDataset,
                 'nerfpp': NeRFPPDataset,
                 'kitti': KittiDataset,
-                'mega': MegaDataset
+                'mega': MegaDataset,
+                'mipnerf360': MipNeRF360Dataset,
+                'lerf': LeRFDataset,
 }

@@ -108,17 +108,18 @@ class ColmapDataset(BaseDataset):
         w2c_mats = np.stack(w2c_mats, 0)
         poses = np.linalg.inv(w2c_mats)[perm, :3] # (N_images, 3, 4) cam2world matrices
 
-        pts3d = read_points3d_binary(os.path.join(self.root_dir, 'sparse/0/points3D.bin'))
-        pts3d = np.array([pts3d[k].xyz for k in pts3d]) # (N, 3)
+        # pts3d = read_points3d_binary(os.path.join(self.root_dir, 'sparse/0/points3D.bin'))
+        # pts3d = np.array([pts3d[k].xyz for k in pts3d]) # (N, 3)
 
         # self.poses, self.pts3d = center_poses(poses, pts3d)
-        self.poses, self.pts3d = poses, pts3d
+        self.poses = poses
+        # self.pts3d = pts3d
         self.up = torch.FloatTensor(-normalize(self.poses[:, :3, 1].mean(0)))
         print(f"scene up {self.up}")
         scale = np.linalg.norm(self.poses[..., 3], axis=-1).max()
         print(f"scene scale {scale}")
         self.poses[..., 3] /= scale
-        self.pts3d /= scale
+        # self.pts3d /= scale
         
         self.rays = []
         if kwargs.get('use_sem', False):

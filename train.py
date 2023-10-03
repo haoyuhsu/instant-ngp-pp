@@ -135,10 +135,16 @@ class NeRFSystem(LightningModule):
         
         if split=='train':
             poses = self.poses[batch['img_idxs']]
-            directions = self.directions[batch['pix_idxs']]
+            if len(self.directions.shape) == 3:
+                directions = self.directions[batch['img_idxs'], batch['pix_idxs']]
+            else:
+                directions = self.directions[batch['pix_idxs']]
         else:
             poses = batch['pose']
-            directions = self.directions
+            if len(self.directions.shape) == 3:
+                directions = self.directions[batch['img_idxs']]
+            else:
+                directions = self.directions
         
         poses_ = poses
         if self.hparams.optimize_ext:
@@ -253,14 +259,14 @@ class NeRFSystem(LightningModule):
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset,
-                          num_workers=16,
+                          num_workers=1,
                           persistent_workers=True,
                           batch_size=None,
                           pin_memory=True)
 
     def val_dataloader(self):
         return DataLoader(self.test_dataset,
-                          num_workers=8,
+                          num_workers=1,
                           batch_size=None,
                           pin_memory=True)
 
@@ -271,7 +277,7 @@ class NeRFSystem(LightningModule):
         if self.global_step%self.update_interval == 0:
             self.model.update_density_grid(0.01*MAX_SAMPLES/3**0.5,
                                         warmup=self.global_step<self.warmup_steps,
-                                        erode=self.hparams.dataset_name=='colmap')
+                                        erode=self.hparams.dataset_name=='colmap_tmp')
 
         # with autograd.detect_anomaly():
         results = self(batch, split='train')

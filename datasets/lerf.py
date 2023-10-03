@@ -5,6 +5,7 @@ import os
 from PIL import Image
 from einops import rearrange
 from tqdm import tqdm
+import json
 
 from .ray_utils import *
 from .color_utils import read_image, read_normal, read_normal_up, read_semantic
@@ -15,7 +16,7 @@ def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
 
-class tntDataset(BaseDataset):
+class LeRFDataset(BaseDataset):
     def __init__(self, root_dir, split='train', downsample=1.0, cam_scale_factor=0.95, render_train=False, **kwargs):
         super().__init__(root_dir, split, downsample)
 
@@ -29,10 +30,10 @@ class tntDataset(BaseDataset):
         depth_dir_name = None
         if os.path.exists(os.path.join(root_dir, 'images')):
             img_dir_name = 'images'
+
         elif os.path.exists(os.path.join(root_dir, 'rgb')):
             img_dir_name = 'rgb'
         
-        img_files = sorted(os.listdir(os.path.join(root_dir, img_dir_name)), key=sort_key)
         # if os.path.exists(os.path.join(root_dir, 'semantic')):
         #     sem_dir_name = 'semantic'
         if os.path.exists(os.path.join(root_dir, 'semantic_inst')):
@@ -41,13 +42,20 @@ class tntDataset(BaseDataset):
         #     sem_dir_name = 'semantic_cat'
         if os.path.exists(os.path.join(root_dir, 'depth')):
             depth_dir_name = 'depth'
+
+        self.has_render_traj = False
+        if split == "test" and not render_train:
+            self.has_render_traj = os.path.exists(os.path.join(root_dir, 'camera_path'))
         
-        if split == 'train': prefix = '0_'
-        elif split == 'val': prefix = '1_'
-        elif 'Synthetic' in self.root_dir: prefix = '2_'
-        elif split == 'test': prefix = '1_' # test set for real scenes
+        prefix = ''
         
-        imgs = sorted(glob.glob(os.path.join(self.root_dir, img_dir_name, prefix+'*.png')), key=sort_key)
+        imgs = sorted(glob.glob(os.path.join(self.root_dir, img_dir_name, prefix+'*.jpg')), key=sort_key)
+        for img_file_path in imgs:
+            img = Image.open(img_file_path)
+            w, h = img.width, img.height
+            break
+        w, h = int(w*downsample), int(h*downsample)
+        self.img_wh = (w, h)
         
         semantics = []
         if kwargs.get('use_sem', False):            
@@ -56,60 +64,46 @@ class tntDataset(BaseDataset):
         depths = []
         if kwargs.get('depth_mono', False):            
             depths = sorted(glob.glob(os.path.join(self.root_dir, depth_dir_name, prefix+'*.npy')), key=sort_key)
-        poses = sorted(glob.glob(os.path.join(self.root_dir, 'pose', prefix+'*.txt')), key=sort_key)
-        
-        for img_name in img_files:
-            img_file_path = os.path.join(root_dir, img_dir_name, img_name)
-            img = Image.open(img_file_path)
-            w, h = img.width, img.height
-            break
-        
-        w, h = int(w*downsample), int(h*downsample)
-        self.K = np.loadtxt(os.path.join(root_dir, 'intrinsics.txt'), dtype=np.float32)
-        if self.K.shape[0]>4:
-            self.K = self.K.reshape((4, 4))
-        self.K = self.K[:3, :3]
-        self.K *= downsample
-        self.K = torch.FloatTensor(self.K)
-        
-        self.img_wh = (w, h)
-        self.directions = get_ray_directions(h, w, self.K, anti_aliasing_factor=kwargs.get('anti_aliasing_factor', 1.0))
-        
-########################################################## get g.t. poses:
-        
-        self.has_render_traj = False
-        if split == "test" and not render_train:
-            self.has_render_traj = os.path.exists(os.path.join(root_dir, 'camera_path'))
-        all_c2w = []
-        for pose_fname in poses:
-            pose_path = pose_fname
-            #  intrin_path = path.join(root, intrin_dir_name, pose_fname)
-            #  (right, down, forward)
-            cam_mtx = np.loadtxt(pose_path).reshape(-1, 4)
-            if len(cam_mtx) == 3:
-                bottom = np.array([[0.0, 0.0, 0.0, 1.0]])
-                cam_mtx = np.concatenate([cam_mtx, bottom], axis=0)
-            all_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
 
+        # read poses and intrinsics of each frame from json file
+        with open(os.path.join(root_dir, 'transforms.json'), 'r') as f:
+            meta = json.load(f)
+
+        ########################################################## get g.t. poses:
+        all_c2w = []
+        for frame_info in meta['frames']:
+            cam_mtx = np.array(frame_info['transform_matrix'])
+            cam_mtx = cam_mtx @ np.diag([1, -1, -1, 1])  # OpenGL to OpenCV camera
+            all_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
         c2w_f64 = torch.stack(all_c2w)
+        
         # center = c2w_f64[:, :3, 3].mean(axis=0)
         # # radius = np.linalg.norm((c2w_f64[:, :3, 3]-center), axis=0).mean(axis=0)
         # up = -normalize(c2w_f64[:, :3, 1].sum(0))
         self.up = -normalize(c2w_f64[:,:3,1].mean(0))
         print(f'up vector: {self.up}')
-########################################################### scale the scene
-        norm_pose_files = sorted(
-            os.listdir(os.path.join(root_dir, 'pose')), key=sort_key
-        )
-        norm_poses = np.stack(
-            [
-                np.loadtxt(os.path.join(root_dir, 'pose', x)).reshape(-1, 4)
-                for x in norm_pose_files
-            ],
-            axis=0,
-        )
-        scale = np.linalg.norm(norm_poses[..., 3], axis=-1).max()
+
+        # compute scale of poses
+        scale = torch.linalg.norm(c2w_f64[..., 3], axis=-1).max()
         print(f"scene scale {scale}")
+
+        ########################################################## get g.t. intrinsics:
+        all_K = []
+        all_directions = []
+        for frame_info in meta['frames']:
+            fx, fy, cx, cy = frame_info['fl_x'], frame_info['fl_y'], frame_info['cx'], frame_info['cy']
+            cam_K = np.array([
+                [fx, 0, cx], 
+                [0, fy, cy], 
+                [0, 0, 1]]
+            )
+            cam_K *= downsample
+            all_K.append(torch.from_numpy(cam_K))
+            direction = get_ray_directions(h, w, cam_K, anti_aliasing_factor=kwargs.get('anti_aliasing_factor', 1.0))
+            all_directions.append(direction)
+        self.K = torch.stack(all_K)
+        self.directions = torch.stack(all_directions)
+    
 ###########################################################
         if self.has_render_traj or render_train:
             print("render camera path" if not render_train else "render train interpolation")
@@ -168,6 +162,7 @@ class tntDataset(BaseDataset):
                     cam_mtx = np.concatenate([cam_mtx, bottom], axis=0)
                 all_render_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
             render_normal_c2w_f64 = torch.stack(all_render_c2w)
+
 ############################################################ normalize by camera
         c2w_f64[..., 3] /= scale
         
@@ -180,7 +175,8 @@ class tntDataset(BaseDataset):
         if kwargs.get('render_normal_mask', False):
             render_normal_c2w_f64 = np.array(render_normal_c2w_f64)
             # render_normal_c2w_f64 = pose_avg_inv @ render_normal_c2w_f64
-            render_normal_c2w_f64 = render_normal_c2w_f64[:, :3]            
+            render_normal_c2w_f64 = render_normal_c2w_f64[:, :3]
+           
 ########################################################### gen rays
         classes = kwargs.get('num_classes', 7)
         self.imgs = imgs
@@ -210,11 +206,11 @@ class tntDataset(BaseDataset):
         norms = []
         labels = []
         
-        if split == 'train': prefix = '0_'
-        elif split == 'val': prefix = '1_'
-        elif 'Synthetic' in self.root_dir: prefix = '2_'
-        elif split == 'test': prefix = '1_' # test set for real scenes
-        
+        # if split == 'train': prefix = '0_'
+        # elif split == 'val': prefix = '1_'
+        # elif 'Synthetic' in self.root_dir: prefix = '2_'
+        # elif split == 'test': prefix = '1_' # test set for real scenes
+
         self.poses = []
         print(f'Loading {len(imgs)} {split} images ...')
         if len(semantics)>0:
@@ -261,13 +257,14 @@ class tntDataset(BaseDataset):
         return torch.FloatTensor(np.stack(depths_))
     
     def get_path_rays(self, c2w_list):
+
         rays = {}
         print(f'Loading {len(c2w_list)} camera path ...')
         for idx, pose in enumerate(tqdm(c2w_list)):
             render_c2w = np.array(c2w_list[idx][:3])
 
             rays_o, rays_d = \
-                get_rays(self.directions, torch.FloatTensor(render_c2w))
+                get_rays(self.directions[idx], torch.FloatTensor(render_c2w))
 
             rays[idx] = torch.cat([rays_o, rays_d], 1).cpu() # (h*w, 6)
 
@@ -275,29 +272,29 @@ class tntDataset(BaseDataset):
 
 if __name__ == '__main__':
     import pickle 
-    save_path = 'output/dataset_cameras/family.pkl'
+    # save_path = 'output/dataset_cameras/family.pkl'
 
-    kwargs = {
-        'root_dir': '../datasets/TanksAndTempleBG/Family',
-        'render_traj': True,
-    }
-    dataset = tntDataset(
-        split='test',
-        **kwargs
-    )
+    # kwargs = {
+    #     'root_dir': '../datasets/TanksAndTempleBG/Family',
+    #     'render_traj': True,
+    # }
+    # dataset = tntDataset(
+    #     split='test',
+    #     **kwargs
+    # )
     
-    cam_info = {
-        'img_wh': dataset.img_wh,
-        'K': np.array(dataset.K),
-        'c2w': np.array(dataset.c2w)
-    }
+    # cam_info = {
+    #     'img_wh': dataset.img_wh,
+    #     'K': np.array(dataset.K),
+    #     'c2w': np.array(dataset.c2w)
+    # }
 
     # with open(save_path, 'wb') as file:
     #     pickle.dump(cam_info, file, protocol=pickle.HIGHEST_PROTOCOL)
 
-    with open(save_path, 'rb') as file:
-        cam = pickle.load(file)
+    # with open(save_path, 'rb') as file:
+    #     cam = pickle.load(file)
     
-    print('Image W*H:', cam['img_wh'])
-    print('Camera K:', cam['K'])
-    print('Camera poses:', cam['c2w'].shape)
+    # print('Image W*H:', cam['img_wh'])
+    # print('Camera K:', cam['K'])
+    # print('Camera poses:', cam['c2w'].shape)
