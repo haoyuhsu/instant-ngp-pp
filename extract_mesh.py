@@ -6,7 +6,7 @@ import torchvision.transforms as T
 import torch.nn.functional as F
 import plyfile
 import skimage.measure
-from models.networks import NGP, Normal
+from models.networks import NGP
 from opt import get_opts
 from utils import load_ckpt
 
@@ -27,7 +27,7 @@ def convert_samples_to_ply(
     This function adapted from: https://github.com/RobotLocomotion/spartan
     """
 
-    numpy_3d_tensor = pytorch_3d_tensor.numpy()
+    numpy_3d_tensor = pytorch_3d_tensor.detach().numpy()
     voxel_size = list((bbox[1]-bbox[0]) / np.array(pytorch_3d_tensor.shape))
 
     verts, faces, normals, values = skimage.measure.marching_cubes(
@@ -74,9 +74,19 @@ hparams = get_opts()
 
 os.makedirs(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}'), exist_ok=True)
 rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
-model = NGP(scale=hparams.scale, rgb_act=rgb_act, use_skybox=hparams.use_skybox, embed_a=hparams.embed_a, embed_a_len=hparams.embed_a_len).cuda()
 
-ckpt_path = hparams.ckpt_path
+model = NGP(
+        scale=hparams.scale,
+        rgb_act=rgb_act, 
+        use_skybox=hparams.use_skybox, 
+        embed_a=hparams.embed_a, 
+        embed_a_len=hparams.embed_a_len,
+        classes=hparams.num_classes).cuda()
+
+if hparams.ckpt_load:
+    ckpt_path = hparams.ckpt_load
+else: 
+    ckpt_path = os.path.join('ckpts', hparams.dataset_name, hparams.exp_name, 'last_slim.ckpt')
 
 print(f'ckpt specified: {ckpt_path} !')
 load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model'])

@@ -69,6 +69,24 @@ class LeRFDataset(BaseDataset):
         with open(os.path.join(root_dir, 'transforms.json'), 'r') as f:
             meta = json.load(f)
 
+        # Sort the 'frames' list by 'file_path' to make sure that the order of images is correct
+        # https://stackoverflow.com/questions/72899/how-do-i-sort-a-list-of-dictionaries-by-a-value-of-the-dictionary
+        all_file_paths = [frame_info['file_path'] for frame_info in meta['frames']]
+        sort_indices = [i[0] for i in sorted(enumerate(all_file_paths), key=lambda x:x[1])]
+        meta['frames'] = [meta['frames'][i] for i in sort_indices]
+
+        # Make sure the number of images matches the number of frames
+        # number_list = [i + 1 for i in range(len(imgs))]
+        # for f in meta['frames']:
+        #     file_path = f['file_path']
+        #     number = int(file_path.split('/')[-1].split('.')[0].split('_')[-1])
+        #     # remove the number from the number_list if it is found
+        #     if number in number_list:
+        #         number_list.remove(number)
+        #     print(number)
+        # print(number_list)
+        # print(len(meta['frames']), len(imgs))
+
         ########################################################## get g.t. poses:
         all_c2w = []
         for frame_info in meta['frames']:
@@ -91,7 +109,10 @@ class LeRFDataset(BaseDataset):
         all_K = []
         all_directions = []
         for frame_info in meta['frames']:
-            fx, fy, cx, cy = frame_info['fl_x'], frame_info['fl_y'], frame_info['cx'], frame_info['cy']
+            if 'fl_x' in meta:
+                fx, fy, cx, cy = meta['fl_x'], meta['fl_y'], meta['cx'], meta['cy']
+            else:
+                fx, fy, cx, cy = frame_info['fl_x'], frame_info['fl_y'], frame_info['cx'], frame_info['cy']
             cam_K = np.array([
                 [fx, 0, cx], 
                 [0, fy, cy], 

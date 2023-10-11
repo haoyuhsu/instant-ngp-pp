@@ -42,10 +42,11 @@ class tntDataset(BaseDataset):
         if os.path.exists(os.path.join(root_dir, 'depth')):
             depth_dir_name = 'depth'
         
-        if split == 'train': prefix = '0_'
-        elif split == 'val': prefix = '1_'
-        elif 'Synthetic' in self.root_dir: prefix = '2_'
-        elif split == 'test': prefix = '1_' # test set for real scenes
+        # if split == 'train': prefix = '0_'
+        # elif split == 'val': prefix = '1_'
+        # elif 'Synthetic' in self.root_dir: prefix = '2_'
+        # elif split == 'test': prefix = '1_' # test set for real scenes
+        prefix = ''
         
         imgs = sorted(glob.glob(os.path.join(self.root_dir, img_dir_name, prefix+'*.png')), key=sort_key)
         
@@ -58,8 +59,7 @@ class tntDataset(BaseDataset):
             depths = sorted(glob.glob(os.path.join(self.root_dir, depth_dir_name, prefix+'*.npy')), key=sort_key)
         poses = sorted(glob.glob(os.path.join(self.root_dir, 'pose', prefix+'*.txt')), key=sort_key)
         
-        for img_name in img_files:
-            img_file_path = os.path.join(root_dir, img_dir_name, img_name)
+        for img_file_path in imgs:
             img = Image.open(img_file_path)
             w, h = img.width, img.height
             break
@@ -132,22 +132,22 @@ class tntDataset(BaseDataset):
 ############ here we generate the test trajectories
 ############ we store the poses in render_c2w_f64
             ###### do interpolation ######
-            if render_train:
-                all_render_c2w_new = []
-                for i, pose in enumerate(all_render_c2w):
-                    if len(all_render_c2w_new) >= 600:
-                        break
-                    all_render_c2w_new.append(pose)
-                    if i>0 and i<len(all_render_c2w)-1:
-                        pose_new = (pose*3+all_render_c2w[i+1])/4
-                        all_render_c2w_new.append(pose_new)
-                        pose_new = (pose+all_render_c2w[i+1])/2
-                        all_render_c2w_new.append(pose_new)
-                        pose_new = (pose+all_render_c2w[i+1]*3)/4
-                        all_render_c2w_new.append(pose_new)
+            # if render_train:
+            #     all_render_c2w_new = []
+            #     for i, pose in enumerate(all_render_c2w):
+            #         if len(all_render_c2w_new) >= 600:
+            #             break
+            #         all_render_c2w_new.append(pose)
+            #         if i>0 and i<len(all_render_c2w)-1:
+            #             pose_new = (pose*3+all_render_c2w[i+1])/4
+            #             all_render_c2w_new.append(pose_new)
+            #             pose_new = (pose+all_render_c2w[i+1])/2
+            #             all_render_c2w_new.append(pose_new)
+            #             pose_new = (pose+all_render_c2w[i+1]*3)/4
+            #             all_render_c2w_new.append(pose_new)
 
-                render_c2w_f64 = torch.stack(all_render_c2w_new)
-            render_c2w_f64 = generate_interpolated_path(render_c2w_f64.numpy(), 2)
+            #     render_c2w_f64 = torch.stack(all_render_c2w_new)
+            # render_c2w_f64 = generate_interpolated_path(render_c2w_f64.numpy(), 2)
             self.c2w = render_c2w_f64
 
         if kwargs.get('render_normal_mask', False):
