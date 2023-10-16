@@ -194,6 +194,14 @@ def render_for_test(hparams, split='test'):
                         
         torch.cuda.synchronize()
 
+    # # reshape the size of the frames to divisible by 2 for video rendering in frame_series, depth_series, normal_series, normal_raw_series
+    # new_h = h if h % 2 == 0 else h - 1
+    # new_w = w if w % 2 == 0 else w - 1
+    # frame_series = np.stack([frame.reshape(new_h, new_w, 3) for frame in frame_series])
+    # depth_series = np.stack([depth.reshape(new_h, new_w) for depth in depth_series])
+    # normal_series = np.stack([normal.reshape(new_h, new_w, 3) for normal in normal_series])
+    # normal_raw_series = np.stack([normal.reshape(new_h, new_w, 3) for normal in normal_raw_series])
+
     if hparams.render_rgb:
         imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_rgb.mp4'),
                         frame_series,

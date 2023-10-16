@@ -147,22 +147,22 @@ class LeRFDataset(BaseDataset):
 ############ here we generate the test trajectories
 ############ we store the poses in render_c2w_f64
             ###### do interpolation ######
-            if render_train:
-                all_render_c2w_new = []
-                for i, pose in enumerate(all_render_c2w):
-                    if len(all_render_c2w_new) >= 600:
-                        break
-                    all_render_c2w_new.append(pose)
-                    if i>0 and i<len(all_render_c2w)-1:
-                        pose_new = (pose*3+all_render_c2w[i+1])/4
-                        all_render_c2w_new.append(pose_new)
-                        pose_new = (pose+all_render_c2w[i+1])/2
-                        all_render_c2w_new.append(pose_new)
-                        pose_new = (pose+all_render_c2w[i+1]*3)/4
-                        all_render_c2w_new.append(pose_new)
+            # if render_train:
+            #     all_render_c2w_new = []
+            #     for i, pose in enumerate(all_render_c2w):
+            #         if len(all_render_c2w_new) >= 600:
+            #             break
+            #         all_render_c2w_new.append(pose)
+            #         if i>0 and i<len(all_render_c2w)-1:
+            #             pose_new = (pose*3+all_render_c2w[i+1])/4
+            #             all_render_c2w_new.append(pose_new)
+            #             pose_new = (pose+all_render_c2w[i+1])/2
+            #             all_render_c2w_new.append(pose_new)
+            #             pose_new = (pose+all_render_c2w[i+1]*3)/4
+            #             all_render_c2w_new.append(pose_new)
 
-                render_c2w_f64 = torch.stack(all_render_c2w_new)
-            render_c2w_f64 = generate_interpolated_path(render_c2w_f64.numpy(), 2)
+            #     render_c2w_f64 = torch.stack(all_render_c2w_new)
+            # render_c2w_f64 = generate_interpolated_path(render_c2w_f64.numpy(), 2)
             self.c2w = render_c2w_f64
 
         if kwargs.get('render_normal_mask', False):
@@ -186,6 +186,7 @@ class LeRFDataset(BaseDataset):
 
 ############################################################ normalize by camera
         c2w_f64[..., 3] /= scale
+        self.render_traj_rays = self.get_path_rays(c2w_f64)
         
         if self.has_render_traj or render_train:
             render_c2w_f64[..., 3] /= scale

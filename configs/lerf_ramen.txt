@@ -29,3 +29,8 @@ embed_a_len = 8
 embed_msk = True
 
 random_bg = True
+
+### mesh extraction
+grid_dim = "512 512 128"
+min_bound = "-1. -1. -0.3"
+max_bound = "1. 1. 0.15"

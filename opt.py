@@ -113,4 +113,15 @@ def get_opts():
                         help='render depth points')
     parser.add_argument('--chunk_size', type=int, default=131072, 
                         help='Divide image into chunks for rendering')
+    
+    # extract meshes
+    parser.add_argument('--use_gsam_hq', action='store_true', default=False,
+                        help='use HQ grounded-SAM result for mesh extraction')
+    parser.add_argument('--grid_dim', type=str, default="512 128 512",
+                        help='dimension of 3D grids for mesh extraction')
+    parser.add_argument('--min_bound', type=str, default="-1. -0.3 -1.",
+                        help='minimum bound for mesh extraction')
+    parser.add_argument('--max_bound', type=str, default="1. 0.15 1.",
+                        help='maximum bound for mesh extraction')
+
     return parser.parse_args()

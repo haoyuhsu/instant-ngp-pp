@@ -81,6 +81,8 @@ class ColmapDataset(BaseDataset):
         # read extrinsics (of successfully reconstructed images)
         imdata = read_images_binary(os.path.join(self.root_dir, 'sparse/0/images.bin'))
         img_names = [imdata[k].name for k in imdata]
+
+        self.imgs = img_names
         
         perm = np.argsort(img_names)
         if '360' in self.root_dir and self.downsample<1: # mipnerf360 data
@@ -120,6 +122,8 @@ class ColmapDataset(BaseDataset):
         print(f"scene scale {scale}")
         self.poses[..., 3] /= scale
         # self.pts3d /= scale
+
+        render_c2w_f64 = torch.FloatTensor(self.poses)
         
         self.rays = []
         if kwargs.get('use_sem', False):
@@ -129,101 +133,101 @@ class ColmapDataset(BaseDataset):
             self.poses = torch.FloatTensor(self.poses)
             return
 
-        if 'HDR-NeRF' in self.root_dir: # HDR-NeRF data
-            if 'syndata' in self.root_dir: # synthetic
-                # first 17 are test, last 18 are train
-                self.unit_exposure_rgb = 0.73
-                if split=='train':
-                    img_paths = sorted(glob.glob(os.path.join(self.root_dir,
-                                                            f'train/*[024].png')))
-                    self.poses = np.repeat(self.poses[-18:], 3, 0)
-                elif split=='test':
-                    img_paths = sorted(glob.glob(os.path.join(self.root_dir,
-                                                            f'test/*[13].png')))
-                    self.poses = np.repeat(self.poses[:17], 2, 0)
-                else:
-                    raise ValueError(f"split {split} is invalid for HDR-NeRF!")
-            else: # real
-                self.unit_exposure_rgb = 0.5
-                # even numbers are train, odd numbers are test
-                if split=='train':
-                    img_paths = sorted(glob.glob(os.path.join(self.root_dir,
-                                                    f'input_images/*0.jpg')))[::2]
-                    img_paths+= sorted(glob.glob(os.path.join(self.root_dir,
-                                                    f'input_images/*2.jpg')))[::2]
-                    img_paths+= sorted(glob.glob(os.path.join(self.root_dir,
-                                                    f'input_images/*4.jpg')))[::2]
-                    self.poses = np.tile(self.poses[::2], (3, 1, 1))
-                elif split=='test':
-                    img_paths = sorted(glob.glob(os.path.join(self.root_dir,
-                                                    f'input_images/*1.jpg')))[1::2]
-                    img_paths+= sorted(glob.glob(os.path.join(self.root_dir,
-                                                    f'input_images/*3.jpg')))[1::2]
-                    self.poses = np.tile(self.poses[1::2], (2, 1, 1))
-                else:
-                    raise ValueError(f"split {split} is invalid for HDR-NeRF!")
-        else:
-            # use every 8th image as test set
-            if split=='train':
-                img_paths = [x for i, x in enumerate(img_paths) if i%8!=0]
-                self.poses = np.array([x for i, x in enumerate(self.poses) if i%8!=0])
-            elif split=='test':
-                render_c2w_f64 = torch.FloatTensor(self.poses)
+        # if 'HDR-NeRF' in self.root_dir: # HDR-NeRF data
+        #     if 'syndata' in self.root_dir: # synthetic
+        #         # first 17 are test, last 18 are train
+        #         self.unit_exposure_rgb = 0.73
+        #         if split=='train':
+        #             img_paths = sorted(glob.glob(os.path.join(self.root_dir,
+        #                                                     f'train/*[024].png')))
+        #             self.poses = np.repeat(self.poses[-18:], 3, 0)
+        #         elif split=='test':
+        #             img_paths = sorted(glob.glob(os.path.join(self.root_dir,
+        #                                                     f'test/*[13].png')))
+        #             self.poses = np.repeat(self.poses[:17], 2, 0)
+        #         else:
+        #             raise ValueError(f"split {split} is invalid for HDR-NeRF!")
+        #     else: # real
+        #         self.unit_exposure_rgb = 0.5
+        #         # even numbers are train, odd numbers are test
+        #         if split=='train':
+        #             img_paths = sorted(glob.glob(os.path.join(self.root_dir,
+        #                                             f'input_images/*0.jpg')))[::2]
+        #             img_paths+= sorted(glob.glob(os.path.join(self.root_dir,
+        #                                             f'input_images/*2.jpg')))[::2]
+        #             img_paths+= sorted(glob.glob(os.path.join(self.root_dir,
+        #                                             f'input_images/*4.jpg')))[::2]
+        #             self.poses = np.tile(self.poses[::2], (3, 1, 1))
+        #         elif split=='test':
+        #             img_paths = sorted(glob.glob(os.path.join(self.root_dir,
+        #                                             f'input_images/*1.jpg')))[1::2]
+        #             img_paths+= sorted(glob.glob(os.path.join(self.root_dir,
+        #                                             f'input_images/*3.jpg')))[1::2]
+        #             self.poses = np.tile(self.poses[1::2], (2, 1, 1))
+        #         else:
+        #             raise ValueError(f"split {split} is invalid for HDR-NeRF!")
+        # else:
+        #     # use every 8th image as test set
+        #     if split=='train':
+        #         img_paths = [x for i, x in enumerate(img_paths) if i%8!=0]
+        #         self.poses = np.array([x for i, x in enumerate(self.poses) if i%8!=0])
+        #     elif split=='test':
+        #         render_c2w_f64 = torch.FloatTensor(self.poses)
                 
-                img_paths = [x for i, x in enumerate(img_paths) if i%8==0]
-                self.poses = np.array([x for i, x in enumerate(self.poses) if i%8==0])
-                if kwargs.get('render_traj', False):
-                    # render_c2w_f64 = create_spheric_poses(1.2, self.poses[:, 1, 3].mean())
-                    # render_c2w_f64 = torch.FloatTensor(render_c2w_f64)
-                    render_c2w_f64 = generate_interpolated_path(self.poses, 120)[400:800]
-                # if kwargs.get('render_train', False):
-                #     print('render_train!')
-                #     all_render_poses = []
-                #     for i, pose in enumerate(self.poses):
-                #         if len(all_render_poses) >= 600:
-                #             break
-                #         all_render_poses.append(torch.FloatTensor(pose))
-                #         if i>0 and i<len(self.poses)-1:
-                #             pose_new = (pose*3+self.poses[i+1])/4
-                #             all_render_poses.append(torch.FloatTensor(pose_new))
-                #             pose_new = (pose+self.poses[i+1])/2
-                #             all_render_poses.append(torch.FloatTensor(pose_new))
-                #             pose_new = (pose+self.poses[i+1]*3)/4
-                #             all_render_poses.append(torch.FloatTensor(pose_new))
-                #     render_c2w_f64 = torch.stack(all_render_poses)
+        #         img_paths = [x for i, x in enumerate(img_paths) if i%8==0]
+        #         self.poses = np.array([x for i, x in enumerate(self.poses) if i%8==0])
+        #         if kwargs.get('render_traj', False):
+        #             # render_c2w_f64 = create_spheric_poses(1.2, self.poses[:, 1, 3].mean())
+        #             # render_c2w_f64 = torch.FloatTensor(render_c2w_f64)
+        #             render_c2w_f64 = generate_interpolated_path(self.poses, 120)[400:800]
+        #         # if kwargs.get('render_train', False):
+        #         #     print('render_train!')
+        #         #     all_render_poses = []
+        #         #     for i, pose in enumerate(self.poses):
+        #         #         if len(all_render_poses) >= 600:
+        #         #             break
+        #         #         all_render_poses.append(torch.FloatTensor(pose))
+        #         #         if i>0 and i<len(self.poses)-1:
+        #         #             pose_new = (pose*3+self.poses[i+1])/4
+        #         #             all_render_poses.append(torch.FloatTensor(pose_new))
+        #         #             pose_new = (pose+self.poses[i+1])/2
+        #         #             all_render_poses.append(torch.FloatTensor(pose_new))
+        #         #             pose_new = (pose+self.poses[i+1]*3)/4
+        #         #             all_render_poses.append(torch.FloatTensor(pose_new))
+        #         #     render_c2w_f64 = torch.stack(all_render_poses)
 
-        print(f'Loading {len(img_paths)} {split} images ...')
-        for img_path in tqdm(img_paths):
-            buf = [] # buffer for ray attributes: rgb, etc
+        # print(f'Loading {len(img_paths)} {split} images ...')
+        # for img_path in tqdm(img_paths):
+        #     buf = [] # buffer for ray attributes: rgb, etc
             
-            img = read_image(img_path, self.img_wh)
-            buf += [torch.FloatTensor(img)]
+        #     img = read_image(img_path, self.img_wh)
+        #     buf += [torch.FloatTensor(img)]
 
-            if 'HDR-NeRF' in self.root_dir: # get exposure
-                folder = self.root_dir.split('/')
-                scene = folder[-1] if folder[-1] != '' else folder[-2]
-                if scene in ['bathroom', 'bear', 'chair', 'desk']:
-                    e_dict = {e: 1/8*4**e for e in range(5)}
-                elif scene in ['diningroom', 'dog']:
-                    e_dict = {e: 1/16*4**e for e in range(5)}
-                elif scene in ['sofa']:
-                    e_dict = {0:0.25, 1:1, 2:2, 3:4, 4:16}
-                elif scene in ['sponza']:
-                    e_dict = {0:0.5, 1:2, 2:4, 3:8, 4:32}
-                elif scene in ['box']:
-                    e_dict = {0:2/3, 1:1/3, 2:1/6, 3:0.1, 4:0.05}
-                elif scene in ['computer']:
-                    e_dict = {0:1/3, 1:1/8, 2:1/15, 3:1/30, 4:1/60}
-                elif scene in ['flower']:
-                    e_dict = {0:1/3, 1:1/6, 2:0.1, 3:0.05, 4:1/45}
-                elif scene in ['luckycat']:
-                    e_dict = {0:2, 1:1, 2:0.5, 3:0.25, 4:0.125}
-                e = int(img_path.split('.')[0][-1])
-                buf += [e_dict[e]*torch.ones_like(img[:, :1])]
+        #     if 'HDR-NeRF' in self.root_dir: # get exposure
+        #         folder = self.root_dir.split('/')
+        #         scene = folder[-1] if folder[-1] != '' else folder[-2]
+        #         if scene in ['bathroom', 'bear', 'chair', 'desk']:
+        #             e_dict = {e: 1/8*4**e for e in range(5)}
+        #         elif scene in ['diningroom', 'dog']:
+        #             e_dict = {e: 1/16*4**e for e in range(5)}
+        #         elif scene in ['sofa']:
+        #             e_dict = {0:0.25, 1:1, 2:2, 3:4, 4:16}
+        #         elif scene in ['sponza']:
+        #             e_dict = {0:0.5, 1:2, 2:4, 3:8, 4:32}
+        #         elif scene in ['box']:
+        #             e_dict = {0:2/3, 1:1/3, 2:1/6, 3:0.1, 4:0.05}
+        #         elif scene in ['computer']:
+        #             e_dict = {0:1/3, 1:1/8, 2:1/15, 3:1/30, 4:1/60}
+        #         elif scene in ['flower']:
+        #             e_dict = {0:1/3, 1:1/6, 2:0.1, 3:0.05, 4:1/45}
+        #         elif scene in ['luckycat']:
+        #             e_dict = {0:2, 1:1, 2:0.5, 3:0.25, 4:0.125}
+        #         e = int(img_path.split('.')[0][-1])
+        #         buf += [e_dict[e]*torch.ones_like(img[:, :1])]
 
-            self.rays += [torch.cat(buf, 1)]
+        #     self.rays += [torch.cat(buf, 1)]
 
-        self.rays = torch.stack(self.rays) # (N_images, hw, ?)
+        # self.rays = torch.stack(self.rays) # (N_images, hw, ?)
         self.poses = torch.FloatTensor(self.poses) # (N_images, 3, 4)
         
         if kwargs.get('use_sem', False):
