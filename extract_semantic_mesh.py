@@ -350,10 +350,11 @@ def convert_samples_to_ply(
     
 
 def extract_semantic_meshes(hparams, split='test'):
-    if hparams.use_gsam_hq:
-        semantic_mesh_dir = os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}/semantic_mesh_hq')
-    else:
-        semantic_mesh_dir = os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}/semantic_mesh')
+    # if hparams.use_gsam_hq:
+    #     semantic_mesh_dir = os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}/semantic_mesh_hq')
+    # else:
+    #     semantic_mesh_dir = os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}/semantic_mesh')
+    semantic_mesh_dir = os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}/semantic_mesh_deva')
     os.makedirs(semantic_mesh_dir, exist_ok=True)
     rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
     if hparams.use_skybox:
@@ -407,18 +408,18 @@ def extract_semantic_meshes(hparams, split='test'):
             render_traj_rays[img_idx] = torch.cat([rays_o, rays_d], 1).cpu()
 
     ##### Use for tracking with DEVA #####
-    # semantic_dir = os.path.join(hparams.root_dir, "track_with_deva")
-    # with open(os.path.join(semantic_dir, "id_dict.json"), 'r') as f:
-    #     id_dict = json.load(f)
-    # categories = id_dict['categories']
-    ##### Use for Grounded-SAM #####
-    if hparams.use_gsam_hq:
-        semantic_dir = os.path.join(hparams.root_dir, "grounded_sam_hq")
-    else:
-        semantic_dir = os.path.join(hparams.root_dir, "grounded_sam")
-    with open(os.path.join(semantic_dir, "pred.json"), 'r') as f:
+    semantic_dir = os.path.join(hparams.root_dir, "track_with_deva")
+    with open(os.path.join(semantic_dir, "id_dict.json"), 'r') as f:
         id_dict = json.load(f)
     categories = id_dict['categories']
+    ##### Use for Grounded-SAM #####
+    # if hparams.use_gsam_hq:
+    #     semantic_dir = os.path.join(hparams.root_dir, "grounded_sam_hq")
+    # else:
+    #     semantic_dir = os.path.join(hparams.root_dir, "grounded_sam")
+    # with open(os.path.join(semantic_dir, "pred.json"), 'r') as f:
+    #     id_dict = json.load(f)
+    # categories = id_dict['categories']
     num_categories = len(categories)
     print("Number of categories:", num_categories)
 
