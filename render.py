@@ -105,7 +105,7 @@ def render_for_test(hparams, split='test'):
 
     dataset = dataset(split='test', **kwargs)
     w, h = dataset.img_wh
-    if hparams.render_traj:
+    if hparams.render_traj or hparams.render_train:
         render_traj_rays = dataset.render_traj_rays
     else:
         # render_traj_rays = dataset.rays

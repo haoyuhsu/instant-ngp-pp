@@ -56,8 +56,8 @@ if __name__ == "__main__":
         edit_instructions = file.readlines()
 
     # output the response as txt file
-    with open('prompts/edit_instructions_responses.txt', 'w') as file:
-        for edit_text in edit_instructions[:3]:
+    with open('prompts/edit_responses.txt', 'w') as file:
+        for edit_text in edit_instructions:
             if edit_text.startswith('='):
                 continue
             response = generate_code(edit_text)
