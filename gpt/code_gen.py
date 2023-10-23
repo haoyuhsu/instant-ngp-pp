@@ -23,12 +23,12 @@ def chat(system, user_assistant):
     assert status_code == "stop", f"The status code was {status_code}."
     return response["choices"][0]["message"]["content"]
 
-def generate_code(edit_instruction):
+def generate_response(edit_instruction):
     assert isinstance(edit_instruction, str), "`prompt` should be a string"
     # system message: WHAT IS THE ROLE OF GPT MODEL?
     system_msg = 'You are a helpful assistant with high intelligence who understands how to write codes.'
     # pre-task message to explain details of the task and how the response should be formatted
-    with open('prompts/pre_task.txt', 'r') as file:
+    with open('gpt/prompts/pre_task_limit_actions.txt', 'r') as file:
         pre_task_prompt = file.read()
     # user message as the query
     query = '''
@@ -40,28 +40,33 @@ Language description: {}
     response = chat(system_msg, [user_msgs])
     return response
 
+def extract_code_from_response(response):
+    # crop out from response, retain only the code part
+    output_code = response.split('```python')[1].split('```')[0]
+    return output_code
+
 if __name__ == "__main__":
     # test single generate_code
-    # edit_instruction = "Place an apple on the grass."
-    # response = generate_code(edit_instruction)
-    # print(response)
+    edit_instruction = "Place an apple on the grass."
+    response = generate_response(edit_instruction)
+    print(response)
 
-    # List available GPT models
-    model_lst = openai.Model.list()
-    # print(model_lst.keys())
-    for model in model_lst['data']:
-        print(model['id']) if model['id'].startswith('gpt') else None
+    # # List available GPT models
+    # model_lst = openai.Model.list()
+    # # print(model_lst.keys())
+    # for model in model_lst['data']:
+    #     print(model['id']) if model['id'].startswith('gpt') else None
 
-    with open('prompts/edit_instructions.txt', 'r') as file:
-        edit_instructions = file.readlines()
+    # with open('prompts/edit_instructions.txt', 'r') as file:
+    #     edit_instructions = file.readlines()
 
-    # output the response as txt file
-    with open('prompts/edit_responses.txt', 'w') as file:
-        for edit_text in edit_instructions:
-            if edit_text.startswith('='):
-                continue
-            response = generate_code(edit_text)
-            file.write("Language description: " + edit_text)
-            file.write(response + '\n')
-            file.write('=====================================\n')
+    # # output the response as txt file
+    # with open('prompts/edit_responses.txt', 'w') as file:
+    #     for edit_text in edit_instructions:
+    #         if edit_text.startswith('='):
+    #             continue
+    #         response = generate_response(edit_text)
+    #         file.write("Language description: " + edit_text)
+    #         file.write(response + '\n')
+    #         file.write('=====================================\n')
         

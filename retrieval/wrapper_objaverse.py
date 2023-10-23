@@ -10,7 +10,7 @@ def load_lvis_annotations():
     lvis_annotations = {k.lower(): v for k, v in lvis_annotations.items()}
     return lvis_annotations
 
-def Retrieval(obj_name):
+def retrieve_object_from_objaverse(obj_name):
     obj_name = obj_name.lower().replace(' ', '_')
     lvis_annot = load_lvis_annotations()
     if obj_name in lvis_annot:
@@ -28,5 +28,5 @@ def Retrieval(obj_name):
 
 if __name__ == '__main__':
     obj_name = 'apple'
-    obj_info = Retrieval(obj_name)
+    obj_info = retrieve_object_from_objaverse(obj_name)
     print(obj_info)

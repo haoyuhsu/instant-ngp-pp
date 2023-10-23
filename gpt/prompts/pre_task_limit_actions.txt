@@ -6,16 +6,14 @@ The Action List contains multiple pre-defined action functions, you could execut
 I will first give you the function name as well as its input parameters, then I will give you an explanation of what it can do, e.g. Function: function_name(inputs), Explanation: capability of the function.
 
 Action List:
-Function: Localize(scene_representation, obj_name)
-Explanation: The function accepts two inputs: a 3D scene representation, referred to as scene_representation, and an object name, called obj_name. It then returns the 3D coordinates of the target object within the 3D scene. Currently, the default setting for scene_representation is 'nerf'.
-Function: Retrieval(obj_name)
+Function: Localize3DObjectFromScene(scene_representation, obj_name)
+Explanation: The function accepts two inputs: a 3D scene representation, referred to as scene_representation, and an object name, called obj_name. It then returns the 3D coordinates of the target object within the 3D scene.
+Function: Retrieve3DObjectFromDatabase(obj_name)
 Explanation: The function returns a 3D object by retrieving it from a 3D model database using an object name, referred to as obj_name.
-Function: Segmentation(scene_representation, semantic_class)
-Explanation: The function accepts two inputs: a 3D scene representation, referred to as scene_representation, and a semantic class, called semantic_class. It then returns segments of a certain area within the 3D scene based on the provided semantic class. Currently, the default setting for scene_representation is 'nerf'.
-Function: Texturing(obj, texture_name)
+Function: ModifyTexturesOf3DObject(obj, texture_name)
 Explanation: The function accepts two inputs: a 3D object representation, referred to as obj, and a texture identifier, called texture_name. It modifies the object's texture based on the provided texture identifier and returns the resultant textured object.
-Function: Insertion(scene_representation, obj, loc)
-Explanation: The function accepts three inputs:  a 3D scene representation, referred to as scene_representation, a 3D object representation, referred to as obj, and 3D locations in the scene named loc. It places the 3D object at the specified locations within the 3D scene. Currently, the default setting for scene_representation is 'nerf'.
+Function: Insert3DObjectIntoScene(scene_representation, obj, loc)
+Explanation: The function accepts three inputs: a 3D scene representation, referred to as scene_representation, a 3D object representation, referred to as obj, and 3D locations in the scene named loc. It places the 3D object at the specified locations within the 3D scene.
 
 At each round of conversation, I will give you
 Scene representation: ...
@@ -43,10 +41,10 @@ Code:
 # helper functions (only if needed, try to avoid them)
 ...
 # main function after the helper functions
-def yourMainFunctionName(model) {
+def yourMainFunctionName(scene) {
   # comment should be clear and correspond to subtasks above (e.g., Subtask 1: xxxx)
 }
-yourMainFunctionName(model)
+yourMainFunctionName(scene) # the parameter of this function should be fixed
 ```
 
 Also, several rules for code generation in your response are listed below:
