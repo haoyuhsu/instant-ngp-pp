@@ -16,7 +16,7 @@ def normalize(v):
     return v/np.linalg.norm(v)
 
 class tntDataset(BaseDataset):
-    def __init__(self, root_dir, split='train', downsample=1.0, cam_scale_factor=0.95, render_train=False, **kwargs):
+    def __init__(self, root_dir, split='train', downsample=1.0, cam_scale_factor=0.95, render_train=False, render_interpolate=False, **kwargs):
         super().__init__(root_dir, split, downsample)
 
         def sort_key(x):
@@ -119,7 +119,7 @@ class tntDataset(BaseDataset):
                 for x in os.listdir(os.path.join(root_dir, "camera_path/pose" if not render_train else "pose"))
                 if x.endswith(".txt")
             ]
-            pose_names = sorted(pose_names, key=lambda x: int(x[-9:-4]))
+            pose_names = sorted(pose_names, key=sort_key)
             for x in pose_names:
                 cam_mtx = np.loadtxt(os.path.join(root_dir, "camera_path/pose" if not render_train else "pose", x)).reshape(
                     -1, 4
@@ -132,55 +132,55 @@ class tntDataset(BaseDataset):
 ############ here we generate the test trajectories
 ############ we store the poses in render_c2w_f64
             ###### do interpolation ######
-            # if render_train:
-            #     all_render_c2w_new = []
-            #     for i, pose in enumerate(all_render_c2w):
-            #         if len(all_render_c2w_new) >= 600:
-            #             break
-            #         all_render_c2w_new.append(pose)
-            #         if i>0 and i<len(all_render_c2w)-1:
-            #             pose_new = (pose*3+all_render_c2w[i+1])/4
-            #             all_render_c2w_new.append(pose_new)
-            #             pose_new = (pose+all_render_c2w[i+1])/2
-            #             all_render_c2w_new.append(pose_new)
-            #             pose_new = (pose+all_render_c2w[i+1]*3)/4
-            #             all_render_c2w_new.append(pose_new)
+            if render_interpolate:
+                # all_render_c2w_new = []
+                # for i, pose in enumerate(all_render_c2w):
+                #     # if len(all_render_c2w_new) >= 600:
+                #     #     break
+                #     all_render_c2w_new.append(pose)
+                #     if i>0 and i<len(all_render_c2w)-1:
+                #         pose_new = (pose*3+all_render_c2w[i+1])/4
+                #         all_render_c2w_new.append(pose_new)
+                #         pose_new = (pose+all_render_c2w[i+1])/2
+                #         all_render_c2w_new.append(pose_new)
+                #         pose_new = (pose+all_render_c2w[i+1]*3)/4
+                #         all_render_c2w_new.append(pose_new)
 
-            #     render_c2w_f64 = torch.stack(all_render_c2w_new)
-            # render_c2w_f64 = generate_interpolated_path(render_c2w_f64.numpy(), 2)
+                # render_c2w_f64 = torch.stack(all_render_c2w_new)
+                render_c2w_f64 = generate_interpolated_path(render_c2w_f64.numpy(), 4)
             self.c2w = render_c2w_f64
 
-        if kwargs.get('render_normal_mask', False):
-            print("render up normal mask for train data!")
-            all_render_c2w = []
-            pose_names = [
-                x
-                for x in os.listdir(os.path.join(root_dir, "pose"))
-                if x.endswith(".txt") and x.startswith("0_")
-            ]
-            pose_names = sorted(pose_names, key=lambda x: int(x[-9:-4]))
-            for x in pose_names:
-                cam_mtx = np.loadtxt(os.path.join(root_dir, "pose", x)).reshape(
-                    -1, 4
-                )
-                if len(cam_mtx) == 3:
-                    bottom = np.array([[0.0, 0.0, 0.0, 1.0]])
-                    cam_mtx = np.concatenate([cam_mtx, bottom], axis=0)
-                all_render_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
-            render_normal_c2w_f64 = torch.stack(all_render_c2w)
+        # if kwargs.get('render_normal_mask', False):
+        #     print("render up normal mask for train data!")
+        #     all_render_c2w = []
+        #     pose_names = [
+        #         x
+        #         for x in os.listdir(os.path.join(root_dir, "pose"))
+        #         if x.endswith(".txt") and x.startswith("0_")
+        #     ]
+        #     pose_names = sorted(pose_names, key=lambda x: int(x[-9:-4]))
+        #     for x in pose_names:
+        #         cam_mtx = np.loadtxt(os.path.join(root_dir, "pose", x)).reshape(
+        #             -1, 4
+        #         )
+        #         if len(cam_mtx) == 3:
+        #             bottom = np.array([[0.0, 0.0, 0.0, 1.0]])
+        #             cam_mtx = np.concatenate([cam_mtx, bottom], axis=0)
+        #         all_render_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
+        #     render_normal_c2w_f64 = torch.stack(all_render_c2w)
 ############################################################ normalize by camera
         c2w_f64[..., 3] /= scale
         
         if self.has_render_traj or render_train:
             render_c2w_f64[..., 3] /= scale
         
-        if kwargs.get('render_normal_mask', False):
-            render_normal_c2w_f64 /=scale
+        # if kwargs.get('render_normal_mask', False):
+        #     render_normal_c2w_f64 /=scale
                                     
-        if kwargs.get('render_normal_mask', False):
-            render_normal_c2w_f64 = np.array(render_normal_c2w_f64)
-            # render_normal_c2w_f64 = pose_avg_inv @ render_normal_c2w_f64
-            render_normal_c2w_f64 = render_normal_c2w_f64[:, :3]            
+        # if kwargs.get('render_normal_mask', False):
+        #     render_normal_c2w_f64 = np.array(render_normal_c2w_f64)
+        #     # render_normal_c2w_f64 = pose_avg_inv @ render_normal_c2w_f64
+        #     render_normal_c2w_f64 = render_normal_c2w_f64[:, :3]            
 ########################################################### gen rays
         classes = kwargs.get('num_classes', 7)
         self.imgs = imgs
@@ -201,8 +201,8 @@ class tntDataset(BaseDataset):
             
             if self.has_render_traj or render_train:
                 self.render_traj_rays = self.get_path_rays(render_c2w_f64)
-            if kwargs.get('render_normal_mask', False):
-                self.render_normal_rays = self.get_path_rays(render_normal_c2w_f64)
+            # if kwargs.get('render_normal_mask', False):
+            #     self.render_normal_rays = self.get_path_rays(render_normal_c2w_f64)
 
     def read_meta(self, split, imgs, c2w_list, semantics, classes=7):
         # rays = {} # {frame_idx: ray tensor}

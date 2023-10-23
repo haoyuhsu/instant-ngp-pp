@@ -90,6 +90,7 @@ def render_for_test(hparams, split='test'):
     kwargs = {'root_dir': hparams.root_dir,
             'downsample': hparams.downsample,
             'render_train': hparams.render_train,
+            'render_interpolate': hparams.render_interpolate,
             'render_traj': hparams.render_traj,
             'anti_aliasing_factor': hparams.anti_aliasing_factor}
 
@@ -115,8 +116,19 @@ def render_for_test(hparams, split='test'):
             rays_o, rays_d = get_rays(dataset.directions.cuda(), dataset[img_idx]['pose'].cuda())
             render_traj_rays[img_idx] = torch.cat([rays_o, rays_d], 1).cpu()
 
-    frames_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/frames'
+    if hparams.render_interpolate:
+        frames_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/frames_interpolate'
+    else:
+        frames_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/frames'
     os.makedirs(frames_dir, exist_ok=True)
+
+    # save interpolated poses
+    if hparams.render_interpolate:
+        poses_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/poses_interpolate'
+        os.makedirs(poses_dir, exist_ok=True)
+        c2w_list = dataset.c2w
+        for i in range(len(c2w_list)):
+            np.savetxt(os.path.join(poses_dir, '{:0>4d}-pose.txt'.format(i)), c2w_list[i])
 
     frame_series = []
     depth_raw_series = []
@@ -166,7 +178,7 @@ def render_for_test(hparams, split='test'):
                 rgb_frame = rearrange(results['rgb'].cpu().numpy(), '(h w) c -> h w c', h=h)
                 rgb_frame = (rgb_frame*255).astype(np.uint8)
             frame_series.append(rgb_frame)
-            cv2.imwrite(os.path.join(frames_dir, '{:0>3d}-rgb.png'.format(img_idx)), cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(os.path.join(frames_dir, '{:0>4d}-rgb.png'.format(img_idx)), cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR))
         if hparams.render_semantic:
             sem_frame = semantic2img(rearrange(results['semantic'].squeeze(-1).cpu().numpy(), '(h w) -> h w', h=h), hparams.num_classes)
             semantic_series.append(sem_frame)
@@ -175,7 +187,7 @@ def render_for_test(hparams, split='test'):
             depth_raw_series.append(depth_raw)
             depth = depth2img(depth_raw, scale=2*hparams.scale)
             depth_series.append(depth)
-            cv2.imwrite(os.path.join(frames_dir, '{:0>3d}-depth.png'.format(img_idx)), cv2.cvtColor(depth, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(os.path.join(frames_dir, '{:0>4d}-depth.png'.format(img_idx)), cv2.cvtColor(depth, cv2.COLOR_RGB2BGR))
         
         if hparams.render_points:
             points = rearrange(results['points'].cpu().numpy(), '(h w) c -> h w c', h=h)
@@ -185,11 +197,11 @@ def render_for_test(hparams, split='test'):
             normal_pred = rearrange(results['normal_pred'].cpu().numpy(), '(h w) c -> h w c', h=h)+1e-6
             # normal_pred = convert_normal(normal_pred, pose)
             normal_vis = (normal_pred + 1)/2
-            save_image((normal_vis), os.path.join(frames_dir, '{:0>3d}-normal.png'.format(img_idx)))
+            save_image((normal_vis), os.path.join(frames_dir, '{:0>4d}-normal.png'.format(img_idx)))
             normal_series.append((255*normal_vis).astype(np.uint8))
             normal_raw = rearrange(results['normal_raw'].cpu().numpy(), '(h w) c -> h w c', h=h)+1e-6
             normal_vis = (normal_raw + 1)/2
-            save_image((normal_vis), os.path.join(frames_dir, '{:0>3d}-normal-raw.png'.format(img_idx)))
+            save_image((normal_vis), os.path.join(frames_dir, '{:0>4d}-normal-raw.png'.format(img_idx)))
             normal_raw_series.append((255*normal_vis).astype(np.uint8))
                         
         torch.cuda.synchronize()
@@ -217,7 +229,10 @@ def render_for_test(hparams, split='test'):
                         fps=30, macro_block_size=1)
         
         depth_raw_all = np.stack(depth_raw_series) #(n_frames, h ,w)
-        path = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth_raw.npy'
+        if hparams.render_interpolate:
+            path = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth_raw_interpolate.npy'
+        else:
+            path = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth_raw.npy'
         np.save(path, depth_raw_all)
 
     if hparams.render_points:

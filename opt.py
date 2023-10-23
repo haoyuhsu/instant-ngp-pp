@@ -88,7 +88,9 @@ def get_opts():
     parser.add_argument('--render_traj', action='store_true', default=False,
                         help='render video on a trajectory')
     parser.add_argument('--render_train', action='store_true', default=False,
-                        help='interpolate among training views to get camera trajectory')
+                        help='render from training views')
+    parser.add_argument('--render_interpolate', action='store_true', default=False,
+                        help='render from interpolated training views')
 
     # misc
     parser.add_argument('--exp_name', type=str, default='exp',

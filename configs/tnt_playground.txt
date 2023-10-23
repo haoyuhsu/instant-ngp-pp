@@ -13,9 +13,10 @@ render_train = True
 
 render_rgb = True
 render_depth = True
+render_interpolate = True
 
 ### render derived normal or not
-render_normal = True
+render_normal = False
 
 ### render semantic labels or not, set to False if no g.t. semantic labels
 # render_semantic = False
