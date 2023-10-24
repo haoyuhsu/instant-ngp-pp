@@ -173,6 +173,7 @@ class tntDataset(BaseDataset):
         
         if self.has_render_traj or render_train:
             render_c2w_f64[..., 3] /= scale
+            self.c2w = render_c2w_f64
         
         # if kwargs.get('render_normal_mask', False):
         #     render_normal_c2w_f64 /=scale

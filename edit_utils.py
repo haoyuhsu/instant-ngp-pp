@@ -54,7 +54,7 @@ def Insert3DObjectIntoScene(scene_representation, object_info, object_locations)
     object_info['orientation'] = None
     scene_representation.insert_object(object_info)
     # run rendering (TODO: maybe this could be called in the end of the whole process)
-    scene_representation.render_scene()
+    scene_representation.render_scene(skip_render_NeRF=True)
 
 def ModifyTexturesOf3DObject(object, texture_name):
     print("Texturing object {} into {}".format(object, texture_name))
