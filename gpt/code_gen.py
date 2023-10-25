@@ -32,7 +32,6 @@ def generate_response(edit_instruction):
         pre_task_prompt = file.read()
     # user message as the query
     query = '''
-Scene representation: NeRF
 Language description: {}
 '''.format(edit_instruction)
     # concatenate system message and user message

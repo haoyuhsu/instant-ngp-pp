@@ -11,6 +11,46 @@ from mathutils import Vector, Matrix
 import argparse
 import glob
 
+# Stackoverflow: https://blender.stackexchange.com/questions/6817/how-to-pass-command-line-arguments-to-a-blender-python-script
+class ArgumentParserForBlender(argparse.ArgumentParser):
+    """
+    This class is identical to its superclass, except for the parse_args
+    method (see docstring). It resolves the ambiguity generated when calling
+    Blender from the CLI with a python script, and both Blender and the script
+    have arguments. E.g., the following call will make Blender crash because
+    it will try to process the script's -a and -b flags:
+    >>> blender --python my_script.py -a 1 -b 2
+
+    To bypass this issue this class uses the fact that Blender will ignore all
+    arguments given after a double-dash ('--'). The approach is that all
+    arguments before '--' go to Blender, arguments after go to the script.
+    The following calls work fine:
+    >>> blender --python my_script.py -- -a 1 -b 2
+    >>> blender --python my_script.py --
+    """
+
+    def _get_argv_after_doubledash(self):
+        """
+        Given the sys.argv as a list of strings, this method returns the
+        sublist right after the '--' element (if present, otherwise returns
+        an empty list).
+        """
+        try:
+            idx = sys.argv.index("--")
+            return sys.argv[idx+1:] # the list after '--'
+        except ValueError as e: # '--' not in the list:
+            return []
+
+    # overrides superclass
+    def parse_args(self):
+        """
+        This method is expected to behave identically as in the superclass,
+        except that the sys.argv list will be pre-processed using
+        _get_argv_after_doubledash before. See the docstring of the class for
+        usage examples and details.
+        """
+        return super().parse_args(args=self._get_argv_after_doubledash())
+
 # get rotation matrix from aligning one vector to another vector
 # link: https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
 def get_rot_mat(v1, v2):
@@ -213,7 +253,7 @@ def create_camera_list(c2w, K):
     cam_list = []
     for i in range(len(c2w)):
         pose = c2w[i].reshape(-1, 4)
-        if isinstance(K, np.ndarray):
+        if len(K.shape) == 3:
             cam_list.append({'c2w': pose, 'K': K[i]})
         else:
             cam_list.append({'c2w': pose, 'K': K})
@@ -262,6 +302,7 @@ def run_blender_render(config_path):
     insert_object_info = config['insert_object_info']
 
     output_dir = os.path.join(results_dir, 'blend_results')
+    os.makedirs(output_dir, exist_ok=True)
 
     setup_blender_env()
     add_env_lighting(env_map_path)
@@ -269,7 +310,7 @@ def run_blender_render(config_path):
 
     # insert objects
     for obj_info in insert_object_info:
-        obj_path = obj_info['obj_path']
+        obj_path = obj_info['object_path']
         pos = np.array(obj_info['pos'])
         # rot = np.array(obj_info['rot'])
         rot = R
@@ -297,10 +338,10 @@ def run_blender_render(config_path):
     cam.render_path_depth(cam_list, dir_name='depth_shadow')
 
 def run_blender_render_terminal(blender_exec_path, config_path):
-    os.system('export blender={} --background --python vc_rendering.py --input_config_path {}'.format(blender_exec_path, config_path))
+    os.system('export blender={} --background --python vc_rendering.py -- --input_config_path {}'.format(blender_exec_path, config_path))
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParserForBlender()
     parser.add_argument('--input_config_path', type=str, default='')
     args = parser.parse_args()
     run_blender_render(args.input_config_path)

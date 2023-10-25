@@ -15,7 +15,8 @@ from opt import get_opts
 from einops import rearrange
 
 from render import render_chunks, depth2img, semantic2img
-from blender import blend, vc_rendering
+from blender import blend
+import json
 
 class SceneRepresentation():
     def __init__(self, hparams):
@@ -26,14 +27,15 @@ class SceneRepresentation():
         self.load_dataset()
         self.load_model()
 
-        self.semantic_mesh_dir = os.path.join(self.dataset_dir, 'semantic_mesh_deva')
+        self.semantic_mesh_dir = os.path.join(self.results_dir, 'semantic_mesh_deva')
         self.set_up_vector()
 
         self.inserted_objects = []
+        self.blender_cfg = {}
 
     def insert_object(self, object_info):
         assert isinstance(object_info, dict)
-        assert isinstance(object_info['position'], np.ndarray)
+        assert isinstance(object_info['pos'], np.ndarray)
         self.inserted_objects.append(object_info)
 
     def set_up_vector(self):
@@ -87,15 +89,44 @@ class SceneRepresentation():
         # TODO: render the scene with inserted objects
         # 1. render rgb frames & depth maps of the scene
         if not skip_render_NeRF:
+            print('Rendering the rgb frames & depth maps with NeRF...')
             self.render_from_NeRF()
         # 2. use blender to render the scene with objects inserted, then compositing
         if self.inserted_objects:
+            print('Rendering the scene with inserted objects...')
             self.render_from_blender()
 
-    def render_from_blender(self):
-        # save config for blender
-        input_config_path = None
-        vc_rendering.run_blender_render_terminal('/snap/bin/blender', input_config_path)
+    def save_cfg(self, cfg, cfg_path):
+        with open(cfg_path, 'w') as f:
+            json.dump(cfg, f, indent=4)
+
+    def set_basic_blender_cfg(self):
+        new_cfg = {}
+        new_cfg['results_dir'] = self.results_dir
+        new_cfg['im_width'], new_cfg['im_height'] = self.dataset.img_wh
+        new_cfg['K'] = self.dataset.K.cpu().numpy().tolist()
+        new_cfg['c2w'] = self.dataset.c2w.cpu().numpy().tolist()
+        new_cfg['up_vector'] = self.up_vector.tolist()
+        new_cfg['env_map_path'] = os.path.join(self.results_dir, 'graveyard_pathways_4k.exr')  # temporary file
+        self.blender_cfg.update(new_cfg)
+
+    def render_from_blender(self):    
+        cfg_path = os.path.join(self.results_dir, 'blender_cfg.json')
+        self.set_basic_blender_cfg()
+        if self.inserted_objects:
+            insert_object_info = []
+            for obj in self.inserted_objects:
+                insert_object_info.append({
+                    'object_name': obj['object_name'],
+                    'object_id': obj['object_id'],
+                    'object_path': obj['object_path'],
+                    'pos': obj['pos'].tolist(),
+                    'rot': obj['rot'].tolist() if obj['rot'] is not None else None,
+                    'scale': 0.03
+                })
+            self.blender_cfg['insert_object_info'] = insert_object_info
+        self.save_cfg(self.blender_cfg, cfg_path)
+        os.system('{} --background --python ./blender/vc_rendering.py -- --input_config_path={}'.format('/snap/bin/blender', cfg_path))
         blend.blend_frames(self.results_dir)
 
     def render_from_NeRF(self):

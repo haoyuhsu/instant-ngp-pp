@@ -27,7 +27,6 @@ def Localize3DObjectFromScene(scene_representation, object_name, N_SAMPLES=2000)
     upwards = scene_representation.up_vector
     vertices = np.asarray(mesh.vertices)[np.dot(np.array(mesh.vertex_normals), upwards) > math.cos(math.radians(30))]
     sampled_vertices = vertices[np.random.choice(vertices.shape[0], N_SAMPLES, replace=False)]
-    sampled_vertices = sampled_vertices.tolist()
     return sampled_vertices
 
 def Retrieve3DObjectFromDatabase(object_name):
@@ -48,13 +47,13 @@ def Retrieve3DObjectFromDatabase(object_name):
 def Insert3DObjectIntoScene(scene_representation, object_info, object_locations):
     print("Inserting object: {}".format(object_info['object_name']))
     assert isinstance(object_info, dict)
-    selected_positions = random.choice(object_locations)
+    selected_positions = object_locations[random.randint(0, len(object_locations)-1)]
     # simply store the location and orientation of the object in the scene representation
-    object_info['position'] = selected_positions
-    object_info['orientation'] = None
+    object_info['pos'] = selected_positions
+    object_info['rot'] = None
     scene_representation.insert_object(object_info)
     # run rendering (TODO: maybe this could be called in the end of the whole process)
-    scene_representation.render_scene(skip_render_NeRF=True)
+    scene_representation.render_scene(skip_render_NeRF=False)
 
 def ModifyTexturesOf3DObject(object, texture_name):
     print("Texturing object {} into {}".format(object, texture_name))

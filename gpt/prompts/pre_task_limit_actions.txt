@@ -16,7 +16,6 @@ Function: Insert3DObjectIntoScene(scene_representation, obj, loc)
 Explanation: The function accepts three inputs: a 3D scene representation, referred to as scene_representation, a 3D object representation, referred to as obj, and 3D locations in the scene named loc. It places the 3D object at the specified locations within the 3D scene.
 
 At each round of conversation, I will give you
-Scene representation: ...
 Language description: ...
 
 You should then respond to me with
@@ -44,7 +43,7 @@ Code:
 def yourMainFunctionName(scene) {
   # comment should be clear and correspond to subtasks above (e.g., Subtask 1: xxxx)
 }
-yourMainFunctionName(scene) # the parameter of this function should be fixed
+yourMainFunctionName(scene)
 ```
 
 Also, several rules for code generation in your response are listed below:

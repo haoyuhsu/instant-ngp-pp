@@ -126,4 +126,8 @@ def get_opts():
     parser.add_argument('--max_bound', type=str, default="1. 0.15 1.",
                         help='maximum bound for mesh extraction')
 
+    # edit
+    parser.add_argument('--edit_text', type=str, default="Place an apple on the sand.",
+                        help='editing instruction input')
+
     return parser.parse_args()

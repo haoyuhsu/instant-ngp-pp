@@ -13,7 +13,7 @@ render_train = True
 
 render_rgb = True
 render_depth = True
-render_interpolate = True
+render_interpolate = False
 
 ### render derived normal or not
 render_normal = False
