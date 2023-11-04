@@ -42,6 +42,7 @@ def Retrieve3DObjectFromDatabase(object_name):
     new_obj_info['object_name'] = object_name
     new_obj_info['object_id'] = obj_id
     new_obj_info['object_path'] = obj_path
+    # new_obj_info['object_path'] = '/home/max/Desktop/Blender_Stuff/insertion/assets/apple.glb'  # for debugging
     return new_obj_info
 
 def Insert3DObjectIntoScene(scene_representation, object_info, object_locations):
@@ -50,10 +51,9 @@ def Insert3DObjectIntoScene(scene_representation, object_info, object_locations)
     selected_positions = object_locations[random.randint(0, len(object_locations)-1)]
     # simply store the location and orientation of the object in the scene representation
     object_info['pos'] = selected_positions
-    object_info['rot'] = None
+    object_info['rot'] = np.eye(3)
+    object_info['scale'] = 0.017
     scene_representation.insert_object(object_info)
-    # run rendering (TODO: maybe this could be called in the end of the whole process)
-    scene_representation.render_scene(skip_render_NeRF=False)
 
 def ModifyTexturesOf3DObject(object, texture_name):
     print("Texturing object {} into {}".format(object, texture_name))

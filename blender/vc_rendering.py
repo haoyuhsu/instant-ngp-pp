@@ -77,6 +77,7 @@ def apply_rot_mat_to_obj(obj, R):
             R:   (3, 3) rotation matrix
     Output: None
     '''
+    R = Matrix(R)
     obj.rotation_mode = 'QUATERNION'
     obj.rotation_quaternion = R.to_quaternion()
 
@@ -246,7 +247,7 @@ def add_env_lighting(env_map_path):
 def get_alignment_rot(v1, v2):
     # calculate alignment rotation matrix (from v1 to v2)
     # v1: asset up vector (default), v2: world up vector
-    R = Matrix(get_rot_mat(v1, v2))
+    R = get_rot_mat(v1, v2)
     return R
 
 def create_camera_list(c2w, K):
@@ -295,7 +296,7 @@ def run_blender_render(config_path):
         config = json.load(f)
     results_dir = config['results_dir']
     h, w = config['im_height'], config['im_width']
-    K = np.array(config['K']) if isinstance(config['K'], list) else config['K']
+    K = np.array(config['K'])
     c2w = np.array(config['c2w'])
     env_map_path = config['env_map_path']
     scene_up_vector = np.array(config['up_vector'])
@@ -306,14 +307,14 @@ def run_blender_render(config_path):
 
     setup_blender_env()
     add_env_lighting(env_map_path)
-    R = get_alignment_rot(np.array([0, 0, 1]), scene_up_vector)
+    align_R = get_alignment_rot(np.array([0, 0, 1]), scene_up_vector)
 
     # insert objects
     for obj_info in insert_object_info:
         obj_path = obj_info['object_path']
         pos = np.array(obj_info['pos'])
-        # rot = np.array(obj_info['rot'])
-        rot = R
+        rot = np.array(obj_info['rot'])
+        rot = align_R @ rot
         scale = obj_info['scale']
         _ = insert_object(obj_path, pos, rot, scale)
 
@@ -327,8 +328,8 @@ def run_blender_render(config_path):
     # add shadow catcher
     for obj_info in insert_object_info:
         pos = np.array(obj_info['pos'])
-        # rot = np.array(obj_info['rot'])
-        rot = R
+        rot = np.array(obj_info['rot'])
+        rot = align_R @ rot
         scale = obj_info['scale']
         add_shadow_catcher(pos, rot, scale, option='plane')
         # add_shadow_catcher(pos, rot, scale, option='mesh', results_dir=results_dir)

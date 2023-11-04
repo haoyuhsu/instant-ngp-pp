@@ -42,7 +42,7 @@ class SceneRepresentation():
         if self.hparams.dataset_name == 'tnt':
             self.up_vector = np.array([0, -1, 0])
         elif self.hparams.dataset_name == 'lerf':
-            self.up_vector = np.array([0, 0, 1])
+            self.up_vector = np.array([0, 0, 1])  # this one not quite sure
         elif self.hparams.dataset_name == '360':
             self.up_vector = np.array([0, 1, 0])  # this one not quite sure
         else:
@@ -69,6 +69,7 @@ class SceneRepresentation():
 
     def load_dataset(self):
         hparams = self.hparams
+        img_dir_name = None
         if os.path.exists(os.path.join(hparams.root_dir, 'images')):
             img_dir_name = 'images'
         elif os.path.exists(os.path.join(hparams.root_dir, 'rgb')):
@@ -121,8 +122,8 @@ class SceneRepresentation():
                     'object_id': obj['object_id'],
                     'object_path': obj['object_path'],
                     'pos': obj['pos'].tolist(),
-                    'rot': obj['rot'].tolist() if obj['rot'] is not None else None,
-                    'scale': 0.03
+                    'rot': obj['rot'].tolist(),
+                    'scale': obj['scale']
                 })
             self.blender_cfg['insert_object_info'] = insert_object_info
         self.save_cfg(self.blender_cfg, cfg_path)
