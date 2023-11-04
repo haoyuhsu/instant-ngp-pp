@@ -9,14 +9,14 @@ num_epochs = 80
 render_traj = False 
 
 ### render camera poses from training dataset
-render_train = True
+render_train = False
+render_interpolate = False
 
 render_rgb = True
 render_depth = True
-render_interpolate = False
 
 ### render derived normal or not
-render_normal = False
+render_normal = True
 
 ### render semantic labels or not, set to False if no g.t. semantic labels
 # render_semantic = False

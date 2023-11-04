@@ -3,13 +3,14 @@ dataset_name = lerf
 exp_name = donuts
 batch_size = 2048
 scale = 4.0
-num_epochs = 40
+num_epochs = 80
 
 ### render a camera path(through interpolation between poses)
 render_traj = False 
 
 ### render camera poses from training dataset
-render_train = True
+render_train = False
+render_interpolate = False
 
 render_rgb = True
 render_depth = True

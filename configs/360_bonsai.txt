@@ -9,7 +9,8 @@ num_epochs = 80
 render_traj = False 
 
 ### render camera poses from training dataset
-render_train = True
+render_train = False
+render_interpolate = False
 
 render_rgb = True
 render_depth = True
