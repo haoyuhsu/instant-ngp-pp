@@ -1,6 +1,6 @@
 root_dir = ../datasets/tnt/Playground
 dataset_name = tnt
-exp_name = playground_no_semantic
+exp_name = playground
 batch_size = 2048
 scale = 8.0
 num_epochs = 80

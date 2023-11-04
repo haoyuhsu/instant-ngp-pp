@@ -2,14 +2,14 @@ root_dir = ../datasets/lerf/teatime
 dataset_name = lerf
 exp_name = teatime
 batch_size = 2048
-scale = 8.0
+scale = 5.0
 num_epochs = 40
 
 ### render a camera path(through interpolation between poses)
-render_traj = True 
+render_traj = False 
 
 ### render camera poses from training dataset
-render_train = False
+render_train = True
 
 render_rgb = True
 render_depth = True

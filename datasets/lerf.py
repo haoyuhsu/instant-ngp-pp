@@ -102,7 +102,7 @@ class LeRFDataset(BaseDataset):
         print(f'up vector: {self.up}')
 
         # compute scale of poses
-        scale = torch.linalg.norm(c2w_f64[..., 3], axis=-1).max()
+        scale = torch.linalg.norm(c2w_f64[..., 0:3, 3], axis=-1).max()
         print(f"scene scale {scale}")
 
         ########################################################## get g.t. intrinsics:
@@ -185,14 +185,14 @@ class LeRFDataset(BaseDataset):
             render_normal_c2w_f64 = torch.stack(all_render_c2w)
 
 ############################################################ normalize by camera
-        c2w_f64[..., 3] /= scale
+        c2w_f64[:, 0:3, 3] /= scale
         self.render_traj_rays = self.get_path_rays(c2w_f64)
         
         if self.has_render_traj or render_train:
-            render_c2w_f64[..., 3] /= scale
+            render_c2w_f64[:, 0:3, 3] /= scale
         
         if kwargs.get('render_normal_mask', False):
-            render_normal_c2w_f64 /=scale
+            render_normal_c2w_f64 /= scale
                                     
         if kwargs.get('render_normal_mask', False):
             render_normal_c2w_f64 = np.array(render_normal_c2w_f64)

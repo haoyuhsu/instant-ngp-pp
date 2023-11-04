@@ -118,9 +118,9 @@ class ColmapDataset(BaseDataset):
         # self.pts3d = pts3d
         self.up = torch.FloatTensor(-normalize(self.poses[:, :3, 1].mean(0)))
         print(f"scene up {self.up}")
-        scale = np.linalg.norm(self.poses[..., 3], axis=-1).max()
+        scale = np.linalg.norm(self.poses[..., 0:3, 3], axis=-1).max()
         print(f"scene scale {scale}")
-        self.poses[..., 3] /= scale
+        self.poses[:, 0:3, 3] /= scale
         # self.pts3d /= scale
 
         render_c2w_f64 = torch.FloatTensor(self.poses)

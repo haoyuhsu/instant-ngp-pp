@@ -108,7 +108,7 @@ class tntDataset(BaseDataset):
             ],
             axis=0,
         )
-        scale = np.linalg.norm(norm_poses[..., 3], axis=-1).max()
+        scale = np.linalg.norm(norm_poses[..., 0:3, 3], axis=-1).max()
         print(f"scene scale {scale}")
 ###########################################################
         if self.has_render_traj or render_train:
@@ -169,10 +169,10 @@ class tntDataset(BaseDataset):
         #         all_render_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
         #     render_normal_c2w_f64 = torch.stack(all_render_c2w)
 ############################################################ normalize by camera
-        c2w_f64[..., 3] /= scale
+        c2w_f64[:, 0:3, 3] /= scale
         
         if self.has_render_traj or render_train:
-            render_c2w_f64[..., 3] /= scale
+            render_c2w_f64[:, 0:3, 3] /= scale
             self.c2w = render_c2w_f64
         
         # if kwargs.get('render_normal_mask', False):
