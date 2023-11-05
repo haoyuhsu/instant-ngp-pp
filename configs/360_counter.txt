@@ -2,7 +2,7 @@ root_dir = ../datasets/360/counter
 dataset_name = colmap
 exp_name = counter
 batch_size = 2048
-scale = 6.0
+scale = 8.0
 num_epochs = 80
 
 ### render a camera path(through interpolation between poses)

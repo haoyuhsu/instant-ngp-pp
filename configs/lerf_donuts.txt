@@ -2,7 +2,7 @@ root_dir = ../datasets/lerf/donuts
 dataset_name = lerf
 exp_name = donuts
 batch_size = 2048
-scale = 4.0
+scale = 8.0
 num_epochs = 80
 
 ### render a camera path(through interpolation between poses)

@@ -2,7 +2,7 @@ root_dir = ../datasets/lerf/waldo_kitchen
 dataset_name = lerf
 exp_name = waldo_kitchen
 batch_size = 2048
-scale = 3.0
+scale = 8.0
 num_epochs = 80
 
 ### render a camera path(through interpolation between poses)
