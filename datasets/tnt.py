@@ -21,45 +21,20 @@ class tntDataset(BaseDataset):
 
         # custom sorting for tnt dataset
         def sort_key(x):
-            if len(x) > 2 and x[-10] == "_":
-                return x[-9:]
-            return x
-        
-        img_dir_name = None 
-        sem_dir_name = None 
-        depth_dir_name = None
-        if os.path.exists(os.path.join(root_dir, 'images')):
-            img_dir_name = 'images'
-        elif os.path.exists(os.path.join(root_dir, 'rgb')):
-            img_dir_name = 'rgb'
-        # if os.path.exists(os.path.join(root_dir, 'semantic')):
-        #     sem_dir_name = 'semantic'
-        # if os.path.exists(os.path.join(root_dir, 'semantic_inst')):
-        #     sem_dir_name = 'semantic_inst'
-        # if os.path.exists(os.path.join(root_dir, 'semantic_cat')):
-        #     sem_dir_name = 'semantic_cat'
-        if os.path.exists(os.path.join(root_dir, 'depth')):
-            depth_dir_name = 'depth'
+            fname = os.path.split(x)[-1]
+            id_name = fname.split('.')[0].split('_')[1]  # ex: 0_00001_xxx.png or 0_00001.txt
+            return id_name
+        self.sort_func = sort_key
         
         if split == 'train' or render_train: prefix = ''    # use all available images
         elif split == 'test': prefix = '1_'                 # use test images (1_*)
         
-        imgs = sorted(glob.glob(os.path.join(self.root_dir, img_dir_name, prefix+'*.png')), key=sort_key)
-        poses = sorted(glob.glob(os.path.join(self.root_dir, 'pose', prefix+'*.txt')), key=sort_key)
-
-        self.imgs = imgs
+        img_path_list = sorted(glob.glob(os.path.join(self.root_dir, 'rgb', prefix+'*.png')), key=sort_key)
+        pose_path_list = sorted(glob.glob(os.path.join(self.root_dir, 'pose', prefix+'*.txt')), key=sort_key)
+        normal_path_list = sorted(glob.glob(os.path.join(self.root_dir, 'normal', prefix+'*.npy')), key=sort_key)
+        depth_path_list = sorted(glob.glob(os.path.join(self.root_dir, 'depth', prefix+'*.npy')), key=sort_key)
         
-        semantics = []
-        # if kwargs.get('use_sem', False):            
-        #     # semantics = sorted(glob.glob(os.path.join(self.root_dir, sem_dir_name, prefix+'*.pgm')), key=sort_key)
-        #     semantics = sorted(glob.glob(os.path.join(self.root_dir, sem_dir_name, prefix+'*.npy')), key=sort_key)
-        classes = kwargs.get('num_classes', 7)
-
-        depths = []
-        # if kwargs.get('depth_mono', False):            
-        #     depths = sorted(glob.glob(os.path.join(self.root_dir, depth_dir_name, prefix+'*.npy')), key=sort_key)
-
-        tmp_img = Image.open(imgs[0])
+        tmp_img = Image.open(img_path_list[0])
         w, h = tmp_img.width, tmp_img.height
         # w, h = int(w*downsample), int(h*downsample)
         self.img_wh = (w, h)
@@ -69,21 +44,20 @@ class tntDataset(BaseDataset):
         if self.K.shape[0]>4:
             self.K = self.K.reshape((4, 4))
         self.K = self.K[:3, :3]
-        self.K *= downsample
+        # self.K *= downsample
         self.K = torch.FloatTensor(self.K)
         
         self.directions = get_ray_directions(h, w, self.K, anti_aliasing_factor=kwargs.get('anti_aliasing_factor', 1.0))
         
         # get c2w poses
         all_c2w = []
-        for pose_fname in poses:
-            pose_path = pose_fname
+        for pose_path in pose_path_list:
             cam_mtx = np.loadtxt(pose_path).reshape(-1, 4)
             if len(cam_mtx) == 3:
                 bottom = np.array([[0.0, 0.0, 0.0, 1.0]])
                 cam_mtx = np.concatenate([cam_mtx, bottom], axis=0)
             all_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
-        all_render_c2w = torch.stack(all_c2w)
+        all_render_c2w = torch.stack(all_c2w).float()
 
         # self.up = -normalize(all_render_c2w[:,:3,1].mean(0))
         # print(f'up vector: {self.up}')
@@ -105,7 +79,7 @@ class tntDataset(BaseDataset):
             #         all_render_c2w_new.append(pose_new)
             # all_render_c2w = torch.stack(all_render_c2w_new)
             ### Option 2: interpolate smooth spline path ###
-            all_render_c2w = generate_interpolated_path(all_render_c2w.numpy(), 4)
+            all_render_c2w = torch.FloatTensor(generate_interpolated_path(all_render_c2w.numpy(), 4))
             
         # compute scale factor from all camera poses
         norm_pose_files = sorted(os.listdir(os.path.join(root_dir, 'pose')), key=sort_key)
@@ -117,94 +91,95 @@ class tntDataset(BaseDataset):
         all_render_c2w[:, 0:3, 3] /= scale
             
         self.c2w = all_render_c2w
-             
+    
+        # poses only use 3x4 matrix
+        self.poses = self.c2w[:, :3, :]
+
         # generate rays
         self.rays = None
         self.render_traj_rays = None
         if render_train:
             self.render_traj_rays = self.get_path_rays(all_render_c2w)                    # (h*w, 6) --> ray origin + ray direction
         else: # training NeRF
-            self.rays = self.read_meta(split, imgs, all_render_c2w, semantics, classes)   # (h*w, 3) --> RGB values
+            self.rays = torch.FloatTensor(self.read_rgb(img_path_list))
+            self.normals = torch.FloatTensor(self.read_normal(normal_path_list))
 
-        # if split.startswith('train'):
-        #     if len(semantics)>0:
-        #         self.rays, self.labels = self.read_meta('train', imgs, all_render_c2w, semantics, classes)
-        #     else:
-        #         self.rays = self.read_meta('train', imgs, all_render_c2w, semantics, classes)
-        #     if len(depths)>0:
-        #         self.depths_2d = self.read_depth(depths)
-        # else: # val, test
-        #     if len(semantics)>0:
-        #         self.rays, self.labels = self.read_meta(split, imgs, all_render_c2w, semantics, classes)
-        #     else:
-        #         self.rays = self.read_meta(split, imgs, all_render_c2w, semantics, classes)
-        #     if len(depths)>0:
-        #         self.depths_2d = self.read_depth(depths)
-        #     # if kwargs.get('render_normal_mask', False):
-        #     #     self.render_normal_rays = self.get_path_rays(render_normal_c2w_f64)
+        self.imgs = img_path_list
 
-    def read_meta(self, split, imgs, c2w_list, semantics, classes=7):
-        # rays = {} # {frame_idx: ray tensor}
-        rays = []
-        labels = []
+
+    def read_rgb(self, img_path_list):
+        """
+        Read RGB images from a list of image paths.
         
-        self.poses = []
-        print(f'Loading {len(imgs)} {split} images ...')
-        if len(semantics)>0:
-            for idx, (img, sem) in enumerate(tqdm(zip(imgs, semantics))):
-                c2w = np.array(c2w_list[idx][:3])
-                self.poses += [c2w]
+        Args:
+            img_path_list (list): list of image paths.
 
-                img = read_image(img_path=img, img_wh=self.img_wh)
-                if 'Jade' in self.root_dir or 'Fountain' in self.root_dir:
-                    # these scenes have black background, changing to white
-                    img[torch.all(img<=0.1, dim=-1)] = 1.0
-                if img.shape[-1] == 4:
-                    img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
-                rays += [img]
-                
-                label = read_semantic(sem_path=sem, sem_wh=self.img_wh, classes=classes)
-                labels += [label]
-            
-            self.poses = torch.FloatTensor(np.stack(self.poses))
-            
-            return torch.FloatTensor(np.stack(rays)), torch.LongTensor(np.stack(labels))
-        else:
-            for idx, img in enumerate(tqdm(imgs)):
-                c2w = np.array(c2w_list[idx][:3])
-                self.poses += [c2w]
+        Returns:
+            rgb_list (np.array): (N, H*W, 3) RGB images.
+        """
+        rgb_list = []
+        for img_path in tqdm(img_path_list):
+            img = read_image(img_path=img_path, img_wh=self.img_wh)
+            rgb_list += [img]
+        rgb_list = np.stack(rgb_list)
+        return rgb_list
 
-                img = read_image(img_path=img, img_wh=self.img_wh)
-                if 'Jade' in self.root_dir or 'Fountain' in self.root_dir:
-                    # these scenes have black background, changing to white
-                    img[torch.all(img<=0.1, dim=-1)] = 1.0
-                if img.shape[-1] == 4:
-                    img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
-                rays += [img]
-            
-            self.poses = torch.FloatTensor(np.stack(self.poses))
-            
-            return torch.FloatTensor(np.stack(rays))
+    def read_depth(self, depth_path_list):
+        """
+        Read depth maps from a list of depth paths.
+
+        Args:
+            depth_path_list (list): list of depth paths.
+
+        Returns:
+            depth_list (np.array): (N, H*W) depth maps.
+        """
+        depth_list = []
+        for depth_path in depth_path_list:
+            depth_list += [rearrange(np.load(depth_path), 'h w -> (h w)')]
+        depth_list = np.stack(depth_list)
+        return depth_list
     
-    def read_depth(self, depths):
-        depths_ = []
+    def read_normal(self, norm_path_list):
+        """
+        Read normal maps from a list of normal paths.
 
-        for depth in depths:
-            depths_ += [rearrange(np.load(depth), 'h w -> (h w)')]
-        return torch.FloatTensor(np.stack(depths_))
+        Args:
+            norm_path_list (list): list of normal paths.
+
+        Returns:
+            normal_list (np.array): (N, H*W, 3) normal maps.
+        """
+        poses = self.poses.numpy()
+        normal_list = []
+        for c2w, norm_path in zip(poses, norm_path_list):
+            img = np.load(norm_path).transpose(1, 2, 0)
+            normal = ((img - 0.5) * 2).reshape(-1, 3)
+            normal = normal @ c2w[:,:3].T
+            normal_list.append(normal)
+        normal_list = np.stack(normal_list)
+        return normal_list
     
-    def get_path_rays(self, c2w_list):
+    def get_path_rays(self, render_c2w):
+        """
+        Get rays from a list of camera poses.
+
+        Args:
+            render_c2w (list): list of camera poses.
+
+        Returns:
+            rays (dict): {frame_idx: ray tensor}.
+        """
         rays = {}
-        print(f'Loading {len(c2w_list)} camera path ...')
-        for idx, pose in enumerate(tqdm(c2w_list)):
-            render_c2w = np.array(c2w_list[idx][:3])
-
+        print(f'Loading {len(render_c2w)} camera path ...')
+        for idx in range(len(render_c2w)):
+            c2w = np.array(render_c2w[idx][:3])
             rays_o, rays_d = \
-                get_rays(self.directions, torch.FloatTensor(render_c2w))
-
+                get_rays(self.directions, torch.FloatTensor(c2w))
             rays[idx] = torch.cat([rays_o, rays_d], 1).cpu() # (h*w, 6)
-
         return rays
+
+
 
 if __name__ == '__main__':
     import pickle 

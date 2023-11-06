@@ -17,20 +17,19 @@ render_depth = True
 
 ### render derived normal or not
 render_normal = True
+normal_mono = True
+normal_ref = True
 
 ### render semantic labels or not, set to False if no g.t. semantic labels
-# render_semantic = False
-# num_classes = 6    # for category case (5 category)
-# num_classes = 115    # for instance case (5 category)
-# num_classes = 167
+render_semantic = False
+num_classes = 7
 
 ### appearance embeddings
 embed_a = True
 embed_a_len = 8
 
 ### mask embeddings
-embed_msk = True
-
+embed_msk = False
 random_bg = True
 
 ### mesh extraction

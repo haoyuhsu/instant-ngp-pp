@@ -83,11 +83,6 @@ class ColmapDataset(BaseDataset):
         # read extrinsics (of successfully reconstructed images)
         imdata = read_images_binary(os.path.join(self.root_dir, 'sparse/0/images.bin'))
         img_names = [imdata[k].name for k in imdata]
-
-        # dummy line for compatibility
-        classes = kwargs.get('num_classes', 7)
-        semantics = []
-        depths = []
         
         perm = np.argsort(img_names)
         if '360' in self.root_dir and self.downsample<1: # mipnerf360 data
@@ -99,17 +94,13 @@ class ColmapDataset(BaseDataset):
             if kwargs.get('use_sem', False):
                 semantics = 'semantic'
         # read successfully reconstructed images and ignore others
-        img_paths = [os.path.join(self.root_dir, folder, name)
+        img_path_list = [os.path.join(self.root_dir, folder, name)
                      for name in sorted(img_names)]
         
-        self.imgs = img_paths
-        
-        if kwargs.get('use_sem', False):
-            sem_paths = []
-            for name in sorted(img_names):
-                sem_file_name = os.path.splitext(name)[0]+'.pgm'             
-                sem_paths.append(os.path.join(self.root_dir, semantics, sem_file_name))
-        
+        normal_path_list = sorted(glob.glob(os.path.join(self.root_dir, 'normal', '*.npy')))
+        depth_path_list = sorted(glob.glob(os.path.join(self.root_dir, 'depth', '*.npy')))
+
+        # convert w2c to c2w
         w2c_mats = []
         bottom = np.array([[0, 0, 0, 1.]])
         for k in imdata:
@@ -144,7 +135,7 @@ class ColmapDataset(BaseDataset):
             #         all_render_c2w_new.append(pose_new)
             # all_render_c2w = torch.stack(all_render_c2w_new)
             ### Option 2: interpolate smooth spline path ###
-            all_render_c2w = generate_interpolated_path(all_render_c2w.numpy(), 4)
+            all_render_c2w = torch.FloatTensor(generate_interpolated_path(all_render_c2w.numpy(), 4))
            
         scale = torch.linalg.norm(all_render_c2w[..., 0:3, 3], axis=-1).max()
         print(f"scene scale {scale}")
@@ -153,11 +144,14 @@ class ColmapDataset(BaseDataset):
 
         # using only a subset of images for testing
         if split == 'test' and not render_train:
-            self.imgs = self.imgs[:20]
+            img_path_list = img_path_list[:20]
+            normal_path_list = normal_path_list[:20]
             all_render_c2w = all_render_c2w[:20]
 
         self.c2w = all_render_c2w
-        self.poses = all_render_c2w
+
+        # poses only use 3x4 matrix
+        self.poses = self.c2w[:, :3, :]
 
         # generate rays
         self.rays = None
@@ -165,68 +159,79 @@ class ColmapDataset(BaseDataset):
         if render_train:
             self.render_traj_rays = self.get_path_rays(all_render_c2w)                    # (h*w, 6) --> ray origin + ray direction
         else: # training NeRF
-            self.rays = self.read_meta(split, self.imgs, all_render_c2w, semantics, classes)   # (h*w, 3) --> RGB values
+            self.rays = torch.FloatTensor(self.read_rgb(img_path_list))
+            self.normals = torch.FloatTensor(self.read_normal(normal_path_list))
+
+        self.imgs = img_path_list
+
+    def read_rgb(self, img_path_list):
+        """
+        Read RGB images from a list of image paths.
         
-        # self.rays = []
-        # if kwargs.get('use_sem', False):
-        #     self.labels = []
-        # if split == 'test_traj': # use precomputed test poses
-        #     self.poses = create_spheric_poses(1.2, self.poses[:, 1, 3].mean(), )
-        #     self.poses = torch.FloatTensor(self.poses)
-        #     return
-        
-        # if kwargs.get('use_sem', False):
-        #     classes = kwargs.get('num_classes', 7)
-        #     for sem_path in sem_paths:
-        #         label = read_semantic(sem_path=sem_path, sem_wh=self.img_wh, classes=classes)
-        #         self.labels += [label]
-        #     self.labels = torch.LongTensor(np.stack(self.labels))
-            
-    def read_meta(self, split, imgs, c2w_list, semantics, classes=7):
-        # rays = {} # {frame_idx: ray tensor}
-        rays = []
-        norms = []
-        labels = []
+        Args:
+            img_path_list (list): list of image paths.
 
-        self.poses = []
-        print(f'Loading {len(imgs)} {split} images ...')
-        if len(semantics)>0:
-            for idx, (img, sem) in enumerate(tqdm(zip(imgs, semantics))):
-                c2w = np.array(c2w_list[idx][:3])
-                self.poses += [c2w]
+        Returns:
+            rgb_list (np.array): (N, H*W, 3) RGB images.
+        """
+        rgb_list = []
+        for img_path in tqdm(img_path_list):
+            img = read_image(img_path=img_path, img_wh=self.img_wh)
+            rgb_list += [img]
+        rgb_list = np.stack(rgb_list)
+        return rgb_list
 
-                img = read_image(img_path=img, img_wh=self.img_wh)
-                if img.shape[-1] == 4:
-                    img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
-                rays += [img]
-                
-                label = read_semantic(sem_path=sem, sem_wh=self.img_wh, classes=classes)
-                labels += [label]
-            
-            self.poses = torch.FloatTensor(np.stack(self.poses))
-            
-            return torch.FloatTensor(np.stack(rays)), torch.LongTensor(np.stack(labels))
-        else:
-            for idx, img in enumerate(tqdm(imgs)):
-                c2w = np.array(c2w_list[idx][:3])
-                self.poses += [c2w]
+    def read_depth(self, depth_path_list):
+        """
+        Read depth maps from a list of depth paths.
 
-                img = read_image(img_path=img, img_wh=self.img_wh)
-                if img.shape[-1] == 4:
-                    img = img[:, :3]*img[:, -1:] + (1-img[:, -1:]) # blend A to RGB
-                rays += [img]
-            
-            self.poses = torch.FloatTensor(np.stack(self.poses))
-            
-            return torch.FloatTensor(np.stack(rays))
+        Args:
+            depth_path_list (list): list of depth paths.
 
-    def get_path_rays(self, c2w_list):
+        Returns:
+            depth_list (np.array): (N, H*W) depth maps.
+        """
+        depth_list = []
+        for depth_path in depth_path_list:
+            depth_list += [rearrange(np.load(depth_path), 'h w -> (h w)')]
+        depth_list = np.stack(depth_list)
+        return depth_list
+    
+    def read_normal(self, norm_path_list):
+        """
+        Read normal maps from a list of normal paths.
+
+        Args:
+            norm_path_list (list): list of normal paths.
+
+        Returns:
+            normal_list (np.array): (N, H*W, 3) normal maps.
+        """
+        poses = self.poses.numpy()
+        normal_list = []
+        for c2w, norm_path in zip(poses, norm_path_list):
+            img = np.load(norm_path).transpose(1, 2, 0)
+            normal = ((img - 0.5) * 2).reshape(-1, 3)
+            normal = normal @ c2w[:,:3].T
+            normal_list.append(normal)
+        normal_list = np.stack(normal_list)
+        return normal_list
+
+    def get_path_rays(self, render_c2w):
+        """
+        Get rays from a list of camera poses.
+
+        Args:
+            render_c2w (list): list of camera poses.
+
+        Returns:
+            rays (dict): {frame_idx: ray tensor}.
+        """
         rays = {}
-        print(f'Loading {len(c2w_list)} camera path ...')
-        for idx, pose in enumerate(tqdm(c2w_list)):
-            render_c2w = np.array(c2w_list[idx][:3])
+        print(f'Loading {len(render_c2w)} camera path ...')
+        for idx in range(len(render_c2w)):
+            c2w = np.array(render_c2w[idx][:3])
             rays_o, rays_d = \
-                get_rays(self.directions, torch.FloatTensor(render_c2w))
+                get_rays(self.directions, torch.FloatTensor(c2w))
             rays[idx] = torch.cat([rays_o, rays_d], 1).cpu() # (h*w, 6)
-
         return rays
