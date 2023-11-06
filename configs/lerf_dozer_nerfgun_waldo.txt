@@ -1,7 +1,7 @@
 root_dir = ../datasets/lerf/dozer_nerfgun_waldo
 dataset_name = lerf
 exp_name = dozer_nerfgun_waldo
-batch_size = 2048
+batch_size = 1024
 scale = 8.0
 num_epochs = 80
 

@@ -1,7 +1,7 @@
 root_dir = ../datasets/360/bonsai
 dataset_name = colmap
 exp_name = bonsai
-batch_size = 2048
+batch_size = 1024
 scale = 8.0
 num_epochs = 80
 

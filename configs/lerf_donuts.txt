@@ -1,7 +1,7 @@
 root_dir = ../datasets/lerf/donuts
 dataset_name = lerf
 exp_name = donuts
-batch_size = 2048
+batch_size = 1024
 scale = 8.0
 num_epochs = 80
 

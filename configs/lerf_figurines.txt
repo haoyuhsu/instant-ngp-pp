@@ -1,7 +1,7 @@
 root_dir = ../datasets/lerf/figurines
 dataset_name = lerf
 exp_name = figurines
-batch_size = 2048
+batch_size = 1024
 scale = 8.0
 num_epochs = 80
 
