@@ -10,7 +10,7 @@ from models.networks import NGP
 from models.rendering import render
 from datasets import dataset_dict
 from datasets.ray_utils import get_rays
-from utils import load_ckpt, save_image
+from utils import load_ckpt, save_image, convert_normal
 from opt import get_opts
 from einops import rearrange
 
@@ -64,27 +64,8 @@ def render_for_test(hparams, split='test'):
     else: 
         ckpt_path = os.path.join('ckpts', hparams.dataset_name, hparams.exp_name, 'last_slim.ckpt')
 
-    load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
-    print('Loaded checkpoint: {}'.format(ckpt_path))
-    
-    if os.path.exists(os.path.join(hparams.root_dir, 'images')):
-        img_dir_name = 'images'
-    elif os.path.exists(os.path.join(hparams.root_dir, 'rgb')):
-        img_dir_name = 'rgb'
-    
-    if hparams.dataset_name == 'kitti':
-        N_imgs = 2 * (hparams.kitti_end - hparams.kitti_start + 1)
-    elif hparams.dataset_name == 'mega':
-        N_imgs = 1920 // 6
-    else:
-        N_imgs = len(os.listdir(os.path.join(hparams.root_dir, img_dir_name)))
-    
-    embed_a_length = hparams.embed_a_len
-    if hparams.embed_a:
-        embedding_a = torch.nn.Embedding(N_imgs, embed_a_length).cuda() 
-        load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
-            prefixes_to_ignore=["model", "msk_model"])
-        embedding_a = embedding_a(torch.tensor([0]).cuda())        
+    load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model', 'density_grid', 'grid_coords'])
+    print('Loaded checkpoint: {}'.format(ckpt_path))    
         
     dataset = dataset_dict[hparams.dataset_name]
     kwargs = {'root_dir': hparams.root_dir,
@@ -104,16 +85,28 @@ def render_for_test(hparams, split='test'):
             kwargs['mega_frame_start'] = hparams.mega_frame_start
             kwargs['mega_frame_end'] = hparams.mega_frame_end
 
-    dataset = dataset(split='test', **kwargs)
-    w, h = dataset.img_wh
+    dataset_test = dataset(split='test', **kwargs)
+    w, h = dataset_test.img_wh
+    
+    if hparams.embed_a:
+        dataset_train = dataset(split='train', **kwargs)
+        embed_a_length = hparams.embed_a_len
+        embedding_a = torch.nn.Embedding(len(dataset_train.poses), embed_a_length).cuda() 
+        load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
+            prefixes_to_ignore=["model", "msk_model"])
+        embedding_a = embedding_a(torch.tensor([0]).cuda())    
+    
+    poses, render_traj_rays = None, None
     if hparams.render_traj or hparams.render_train:
-        render_traj_rays = dataset.render_traj_rays
+        render_traj_rays = dataset_test.render_traj_rays
+        poses = dataset_test.c2w
     else:
         # render_traj_rays = dataset.rays
         render_traj_rays = {}
         print("generating rays' origins and directions!")
-        for img_idx in trange(len(dataset.poses)):
-            rays_o, rays_d = get_rays(dataset.directions.cuda(), dataset[img_idx]['pose'].cuda())
+        poses = dataset_test.poses
+        for img_idx in trange(len(poses)):
+            rays_o, rays_d = get_rays(dataset_test.directions.cuda(), dataset_test[img_idx]['pose'].cuda())
             render_traj_rays[img_idx] = torch.cat([rays_o, rays_d], 1).cpu()
 
     if hparams.render_interpolate:
@@ -140,6 +133,7 @@ def render_for_test(hparams, split='test'):
 
     for img_idx in trange(len(render_traj_rays)):
         rays = render_traj_rays[img_idx][:, :6].cuda()
+        pose = poses[img_idx]
         render_kwargs = {
             'img_idx': img_idx,
             'test_time': True,
@@ -150,7 +144,7 @@ def render_for_test(hparams, split='test'):
             'render_normal': hparams.render_normal,
             'render_sem': hparams.render_semantic,
             'num_classes': hparams.num_classes,
-            'img_wh': dataset.img_wh,
+            'img_wh': dataset_test.img_wh,
             'anti_aliasing_factor': hparams.anti_aliasing_factor
         }
         if hparams.dataset_name in ['colmap', 'nerfpp', 'tnt', 'kitti']:
@@ -194,14 +188,14 @@ def render_for_test(hparams, split='test'):
             points_series.append(points)
 
         if hparams.render_normal:
+            pose = pose.cpu().numpy()
             normal_pred = rearrange(results['normal_pred'].cpu().numpy(), '(h w) c -> h w c', h=h)+1e-6
-            # normal_pred = convert_normal(normal_pred, pose)
-            normal_vis = (normal_pred + 1)/2
-            save_image((normal_vis), os.path.join(frames_dir, '{:0>4d}-normal.png'.format(img_idx)))
+            normal_vis = (convert_normal(normal_pred, pose) + 1)/2
+            save_image((normal_vis), os.path.join(frames_dir, '{:0>3d}-normal.png'.format(img_idx)))
             normal_series.append((255*normal_vis).astype(np.uint8))
             normal_raw = rearrange(results['normal_raw'].cpu().numpy(), '(h w) c -> h w c', h=h)+1e-6
-            normal_vis = (normal_raw + 1)/2
-            save_image((normal_vis), os.path.join(frames_dir, '{:0>4d}-normal-raw.png'.format(img_idx)))
+            normal_vis = (convert_normal(normal_raw, pose) + 1)/2
+            save_image((normal_vis), os.path.join(frames_dir, '{:0>3d}-normal-raw.png'.format(img_idx)))
             normal_raw_series.append((255*normal_vis).astype(np.uint8))
                         
         torch.cuda.synchronize()
