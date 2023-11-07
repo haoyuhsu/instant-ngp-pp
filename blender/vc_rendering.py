@@ -54,6 +54,16 @@ class ArgumentParserForBlender(argparse.ArgumentParser):
 # get rotation matrix from aligning one vector to another vector
 # link: https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
 def get_rot_mat(v1, v2):
+    """
+    Calculate rotation matrix to align vector v1 to vector v2
+
+    Args:
+        v1: (3,) vector
+        v2: (3,) vector
+
+    Returns:
+        R: (3, 3) rotation matrix
+    """
     # if two numpy array are the same, return identity matrix
     if np.allclose(v1, v2):
         return np.eye(3)
@@ -71,12 +81,13 @@ def get_rot_mat(v1, v2):
     return R 
 
 def apply_rot_mat_to_obj(obj, R):
-    '''
-    Apply rotation matrix to object
-    Input:  obj: blender object
-            R:   (3, 3) rotation matrix
-    Output: None
-    '''
+    """
+    Apply rotation matrix to blender object
+
+    Args:
+        obj: blender object
+        R: (3, 3) rotation matrix
+    """
     R = Matrix(R)
     obj.rotation_mode = 'QUATERNION'
     obj.rotation_quaternion = R.to_quaternion()
@@ -235,7 +246,12 @@ def setup_blender_env():
     # tree.links.new(node_rl.outputs['Image'], node_out_img.inputs['Image'])
 
 def add_env_lighting(env_map_path):
-    # add environment lighting
+    """
+    Add environment lighting to the scene
+
+    Args:
+        env_map_path: path to the environment map
+    """
     world = bpy.context.scene.world
     nodes = world.node_tree.nodes
     nodes.clear()
@@ -245,10 +261,18 @@ def add_env_lighting(env_map_path):
     world.node_tree.links.new(env.outputs['Color'], out.inputs['Surface'])
 
 def get_alignment_rot(v1, v2):
-    # calculate alignment rotation matrix (from v1 to v2)
-    # v1: asset up vector (default), v2: world up vector
+    """
+    Get rotation matrix to align v1 to v2
+
+    Args:
+        v1: (3,) asset up vector (default)
+        v2: (3,) world scene up vector
+
+    Returns:
+        R: (3, 3) rotation matrix
+    """
     R = get_rot_mat(v1, v2)
-    return R
+    return Matrix(R)
 
 def create_camera_list(c2w, K):
     cam_list = []
@@ -260,15 +284,87 @@ def create_camera_list(c2w, K):
             cam_list.append({'c2w': pose, 'K': K})
     return cam_list
 
+def transform_object_origin(obj, use_verts=True):
+    """
+    Transform object to align with the scene, make the bottom point of the object to be the origin
+
+    Args:
+        obj: blender object
+        use_verts: whether to use vertices or bounding box to calculate the bottom point
+    """
+    all_object_nodes = [obj] + obj.children_recursive
+    # get the bottom point of all components in an asset
+    vert_list = []
+    for obj_node in all_object_nodes:
+        if obj_node.data:
+            me = obj_node.data
+            matrix = obj_node.matrix_world
+            if use_verts:
+                data = (v.co for v in me.vertices)
+            else:
+                data = (Vector(v) for v in obj_node.bound_box)
+            coords = np.array([matrix @ v for v in data])
+            vert_list.append(coords)
+
+    all_vertices = np.concatenate(vert_list, axis=0)
+    x = all_vertices.T[0]
+    y = all_vertices.T[1]
+    z = all_vertices.T[2]
+
+    new_origin = np.zeros(3)
+    new_origin[0] = (x.max() + x.min()) / 2.
+    new_origin[1] = (y.max() + y.min()) / 2.
+    new_origin[2] = z.min()
+
+    # move the asset origin to the bottom point
+    for obj_node in all_object_nodes:
+        if obj_node.data:
+            me = obj_node.data
+            mw = obj_node.matrix_world
+            matrix = obj_node.matrix_world
+            o = Vector(new_origin)
+            o = matrix.inverted() @ o
+            me.transform(Matrix.Translation(-o))
+            mw.translation = mw @ o
+
+    # move all transform to origin
+    for obj_node in all_object_nodes:
+        obj_node.matrix_world.translation = [0, 0, 0]
+        obj_node.rotation_quaternion = [1, 0, 0, 0]
+
+
 def insert_object(obj_path, pos, rot, scale=0.03):
+    """
+    Insert object into the scene
+
+    Args:
+        obj_path: path to the object
+        pos: (3,) position
+        rot: (3, 3) rotation matrix
+        scale: scale of the object
+
+    Returns:
+        inserted_obj: blender object
+    """
     bpy.ops.import_scene.gltf(filepath=obj_path)
-    inserted_obj = bpy.context.selected_objects[0]
+    inserted_obj = bpy.context.object
+    transform_object_origin(inserted_obj, use_verts=True)
     inserted_obj.location = pos
     inserted_obj.scale = scale * np.array([1, 1, 1])
     apply_rot_mat_to_obj(inserted_obj, rot)
     return inserted_obj
 
 def add_shadow_catcher(pos, rot, scale=0.03, option='plane', results_dir=None):
+    """
+    Add shadow catcher to the scene
+
+    Args:
+        pos: (3,) position
+        rot: (3, 3) rotation matrix
+        scale: scale of the object
+        option: 'plane' or 'mesh', which type of shadow catcher to add
+        results_dir: path to the results directory
+    """
     if option == 'plane':
         # add a plane as shadow catcher
         bpy.ops.mesh.primitive_plane_add()
