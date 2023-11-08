@@ -1,6 +1,6 @@
 einops==0.4.1
 kornia==0.6.5
-pytorch-lightning==1.6.5
+pytorch-lightning
 matplotlib==3.5.2
 opencv-python==4.6.0.66
 lpips
@@ -17,3 +17,5 @@ plyfile
 scikit-image
 vedo
 ipdb
+pvlib
+wandb

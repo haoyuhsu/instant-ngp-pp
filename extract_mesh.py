@@ -70,53 +70,60 @@ def convert_samples_to_ply(
     print("saving mesh to %s" % (ply_filename_out))
     ply_data.write(ply_filename_out)
     
-hparams = get_opts()
 
-os.makedirs(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}'), exist_ok=True)
-rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
+if __name__ == '__main__':
 
-model = NGP(
-        scale=hparams.scale,
-        rgb_act=rgb_act, 
-        use_skybox=hparams.use_skybox, 
-        embed_a=hparams.embed_a, 
-        embed_a_len=hparams.embed_a_len,
-        classes=hparams.num_classes).cuda()
+    hparams = get_opts()
 
-if hparams.ckpt_load:
-    ckpt_path = hparams.ckpt_load
-else: 
-    ckpt_path = os.path.join('ckpts', hparams.dataset_name, hparams.exp_name, 'last_slim.ckpt')
+    os.makedirs(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}'), exist_ok=True)
+    rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
 
-print(f'ckpt specified: {ckpt_path} !')
-load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
+    model = NGP(
+            scale=hparams.scale,
+            rgb_act=rgb_act, 
+            use_skybox=hparams.use_skybox, 
+            embed_a=hparams.embed_a, 
+            embed_a_len=hparams.embed_a_len,
+            classes=hparams.num_classes).cuda()
 
-x_min, x_max = -1, 1
-y_min, y_max = -0.3, 0.15
-z_min, z_max = -1, 1
+    if hparams.ckpt_load:
+        ckpt_path = hparams.ckpt_load
+    else: 
+        ckpt_path = os.path.join('ckpts', hparams.dataset_name, hparams.exp_name, 'last_slim.ckpt')
 
-chunk_size = 128*128*128
+    print(f'ckpt specified: {ckpt_path} !')
+    load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
 
-xyz_min = torch.FloatTensor([[x_min, y_min, z_min]])
-xyz_max = torch.FloatTensor([[x_max, y_max, z_max]])
+    grid_dim = np.array([int(grid_) for grid_ in hparams.grid_dim.split(' ')])
+    min_bound = np.array([float(min_) for min_ in hparams.min_bound.split(' ')])
+    max_bound = np.array([float(max_) for max_ in hparams.max_bound.split(' ')])
 
-dense_xyz = torch.stack(torch.meshgrid(
-        torch.linspace(x_min, x_max, 512),
-        torch.linspace(y_min, y_max, 128),
-        torch.linspace(z_min, z_max, 512),
-    ), -1).cuda()
+    x_dim, y_dim, z_dim = grid_dim
+    x_min, y_min, z_min = min_bound
+    x_max, y_max, z_max = max_bound
 
-samples = dense_xyz.reshape(-1, 3)
-density = []
-with torch.no_grad():
-    for i in range(0, samples.shape[0], chunk_size):
-        samples_ = samples[i:i+chunk_size]
-        tmp = model.density(samples_)
-        density.append(tmp)
-density = torch.stack(density, dim=0)
+    chunk_size = 128*128*128
 
-density = density.reshape((dense_xyz.shape[0], dense_xyz.shape[1], dense_xyz.shape[2]))
+    xyz_min = torch.FloatTensor([[x_min, y_min, z_min]])
+    xyz_max = torch.FloatTensor([[x_max, y_max, z_max]])
 
-bbox = torch.cat([xyz_min, xyz_max], dim=0)
-# import ipdb; ipdb.set_trace()
-convert_samples_to_ply(density.cpu(), os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'test.ply'), bbox=bbox.cpu(), level=10)
+    dense_xyz = torch.stack(torch.meshgrid(
+            torch.linspace(x_min, x_max, x_dim),
+            torch.linspace(y_min, y_max, y_dim),
+            torch.linspace(z_min, z_max, z_dim),
+        ), -1).cuda()
+
+    samples = dense_xyz.reshape(-1, 3)
+    density = []
+    with torch.no_grad():
+        for i in range(0, samples.shape[0], chunk_size):
+            samples_ = samples[i:i+chunk_size]
+            tmp = model.density(samples_)
+            density.append(tmp)
+    density = torch.stack(density, dim=0)
+
+    density = density.reshape((dense_xyz.shape[0], dense_xyz.shape[1], dense_xyz.shape[2]))
+
+    bbox = torch.cat([xyz_min, xyz_max], dim=0)
+    # import ipdb; ipdb.set_trace()
+    convert_samples_to_ply(density.cpu(), os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'meshes.ply'), bbox=bbox.cpu(), level=10)
