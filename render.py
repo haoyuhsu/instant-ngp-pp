@@ -13,6 +13,7 @@ from datasets.ray_utils import get_rays
 from utils import load_ckpt, save_image, convert_normal
 from opt import get_opts
 from einops import rearrange
+import skimage
 
 def depth2img(depth, scale=16):
     depth = depth/scale
@@ -102,13 +103,14 @@ def render_for_test(hparams, split='test'):
         render_traj_rays = dataset_test.render_traj_rays
         poses = dataset_test.c2w
     else:
+        pass
         # render_traj_rays = dataset.rays
-        render_traj_rays = {}
-        print("generating rays' origins and directions!")
-        poses = dataset_test.poses
-        for img_idx in trange(len(poses)):
-            rays_o, rays_d = get_rays(dataset_test.directions.cuda(), dataset_test[img_idx]['pose'].cuda())
-            render_traj_rays[img_idx] = torch.cat([rays_o, rays_d], 1).cpu()
+        # render_traj_rays = {}
+        # print("generating rays' origins and directions!")
+        # poses = dataset_test.poses
+        # for img_idx in trange(len(poses)):
+        #     rays_o, rays_d = get_rays(dataset_test.directions.cuda(), dataset_test[img_idx]['pose'].cuda())
+        #     render_traj_rays[img_idx] = torch.cat([rays_o, rays_d], 1).cpu()
 
     if hparams.render_interpolate:
         frames_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/frames_interpolate'
@@ -201,13 +203,14 @@ def render_for_test(hparams, split='test'):
                         
         torch.cuda.synchronize()
 
-    # # reshape the size of the frames to divisible by 2 for video rendering in frame_series, depth_series, normal_series, normal_raw_series
-    # new_h = h if h % 2 == 0 else h - 1
-    # new_w = w if w % 2 == 0 else w - 1
-    # frame_series = np.stack([frame.reshape(new_h, new_w, 3) for frame in frame_series])
-    # depth_series = np.stack([depth.reshape(new_h, new_w) for depth in depth_series])
-    # normal_series = np.stack([normal.reshape(new_h, new_w, 3) for normal in normal_series])
-    # normal_raw_series = np.stack([normal.reshape(new_h, new_w, 3) for normal in normal_raw_series])
+    # reshape the size of the frames to divisible by 2 for video rendering in frame_series, depth_series, normal_series, normal_raw_series
+    new_h = h if h % 2 == 0 else h - 1
+    new_w = w if w % 2 == 0 else w - 1
+    sk_resize = skimage.transform.resize
+    frame_series = [(sk_resize(frame, (new_h, new_w)) * 255.).astype(np.uint8) for frame in frame_series]
+    depth_series = [(sk_resize(frame, (new_h, new_w)) * 255.).astype(np.uint8) for frame in depth_series]
+    normal_series = [(sk_resize(frame, (new_h, new_w)) * 255.).astype(np.uint8) for frame in normal_series]
+    normal_raw_series = [(sk_resize(frame, (new_h, new_w)) * 255.).astype(np.uint8) for frame in normal_raw_series]
 
     if hparams.render_rgb:
         imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_rgb.mp4'),
