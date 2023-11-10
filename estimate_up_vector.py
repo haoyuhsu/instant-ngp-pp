@@ -58,16 +58,16 @@ def estimate_up_vector(hparams, split='test'):
     # then we compute the best aligned vector by RANSAC.
     best_up_vector = None
     best_inliers = None
-    best_score = np.inf
-    for i in range(1000):
+    best_score = 0
+    for i in range(10000):
         idx = np.random.choice(len(all_normal_dirs), 3)
         normal_dir = np.mean(all_normal_dirs[idx], axis=0)
         normal_dir = normal_dir / np.linalg.norm(normal_dir)
         # an inlier is a normal vector that is within 1 degrees of the estimated vector
-        inlier_deg = 3
-        inliers = np.dot(all_normal_dirs, normal_dir) > np.cos(np.pi / 180) * inlier_deg
+        inlier_deg = 1
+        inliers = np.dot(all_normal_dirs, normal_dir) > np.cos(inlier_deg * np.pi / 180)
         score = np.sum(inliers)
-        if score < best_score:
+        if score > best_score:
             best_score = score
             best_up_vector = normal_dir
             best_inliers = inliers
