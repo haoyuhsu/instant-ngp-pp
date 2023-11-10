@@ -5,6 +5,8 @@ batch_size = 1024
 scale = 8.0
 num_epochs = 80
 
+scale_poses = True
+
 ### render a camera path(through interpolation between poses)
 render_traj = False 
 
@@ -36,3 +38,7 @@ random_bg = True
 grid_dim = "512 128 512"
 min_bound = "-1. -0.3 -1."
 max_bound = "1. 0.15 1."
+
+#grid_dim = "1024 256 1024"
+#min_bound = "-2. -0.3 -2."
+#max_bound = "2. 0.15 2."

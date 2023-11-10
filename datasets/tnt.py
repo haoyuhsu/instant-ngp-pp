@@ -87,8 +87,10 @@ class tntDataset(BaseDataset):
         scale = np.linalg.norm(norm_poses[..., 0:3, 3], axis=-1).max()
         print(f"scene scale {scale}")
 
-        # normalize by camera
-        all_render_c2w[:, 0:3, 3] /= scale
+        if kwargs['scale_poses']:
+            print('Scaling poses ...')
+            # normalize by camera
+            all_render_c2w[:, 0:3, 3] /= scale
             
         self.c2w = all_render_c2w
     

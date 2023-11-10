@@ -73,7 +73,8 @@ def render_for_test(hparams, split='test'):
             'render_train': hparams.render_train,
             'render_interpolate': hparams.render_interpolate,
             'render_traj': hparams.render_traj,
-            'anti_aliasing_factor': hparams.anti_aliasing_factor}
+            'anti_aliasing_factor': hparams.anti_aliasing_factor,
+            'scale_poses': hparams.scale_poses}
 
     if hparams.dataset_name == 'kitti':
             kwargs['seq_id'] = hparams.kitti_seq

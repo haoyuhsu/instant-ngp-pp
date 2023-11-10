@@ -5,6 +5,8 @@ batch_size = 1024
 scale = 8.0
 num_epochs = 80
 
+scale_poses = True
+
 ### render a camera path (through interpolation between poses)
 render_traj = False 
 

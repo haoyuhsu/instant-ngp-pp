@@ -393,7 +393,8 @@ def extract_semantic_meshes(hparams, split='test'):
             'downsample': hparams.downsample,
             'render_train': hparams.render_train,
             'render_traj': hparams.render_traj,
-            'anti_aliasing_factor': hparams.anti_aliasing_factor}
+            'anti_aliasing_factor': hparams.anti_aliasing_factor,
+            'scale_poses': hparams.scale_poses}
     
     dataset = dataset(split='test', **kwargs)
     w, h = dataset.img_wh

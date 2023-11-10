@@ -89,8 +89,10 @@ class LeRFDataset(BaseDataset):
             ### Option 2: interpolate smooth spline path ###
             all_render_c2w = torch.FloatTensor(generate_interpolated_path(all_render_c2w.numpy(), 4))
 
-        # normalize by camera
-        all_render_c2w[:, 0:3, 3] /= scale
+        if kwargs['scale_poses']:
+            print('Scaling poses ...')
+            # normalize by camera
+            all_render_c2w[:, 0:3, 3] /= scale
             
         self.c2w = all_render_c2w
 

@@ -201,7 +201,8 @@ class NeRFSystem(LightningModule):
         kwargs = {'root_dir': self.hparams.root_dir,
                   'downsample': self.hparams.downsample,
                   'use_sem': self.hparams.render_semantic,
-                  'depth_mono': self.hparams.depth_mono}
+                  'depth_mono': self.hparams.depth_mono,
+                  'scale_poses': self.hparams.scale_poses}
 
         if self.hparams.dataset_name == 'kitti':
             kwargs['seq_id'] = self.hparams.kitti_seq
@@ -319,7 +320,7 @@ class NeRFSystem(LightningModule):
         self.log('train/psnr', self.train_psnr, True)
         # self.log('train/normal_ref_rp', loss_d['normal_ref_rp'].mean())
         # self.log('train/normal_ref_ro', loss_d['normal_ref_ro'].mean())
-        if self.global_step%10000 == 0: #and self.global_step>0:
+        if self.global_step%10000 == 0 and self.global_step>0:
             print('[val in training]')
             w, h = self.img_wh
             batch = self.test_dataset[0]

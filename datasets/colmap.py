@@ -139,7 +139,11 @@ class ColmapDataset(BaseDataset):
            
         scale = torch.linalg.norm(all_render_c2w[..., 0:3, 3], axis=-1).max()
         print(f"scene scale {scale}")
-        all_render_c2w[:, 0:3, 3] /= scale
+
+        if kwargs['scale_poses']:
+            print('Scaling poses ...')
+            # normalize by camera
+            all_render_c2w[:, 0:3, 3] /= scale
         # self.pts3d /= scale
 
         # using only a subset of images for testing

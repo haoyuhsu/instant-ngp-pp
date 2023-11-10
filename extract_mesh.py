@@ -119,7 +119,7 @@ if __name__ == '__main__':
         for i in range(0, samples.shape[0], chunk_size):
             samples_ = samples[i:i+chunk_size]
             tmp = model.density(samples_)
-            density.append(tmp)
+            density.append(tmp.cpu())
     density = torch.stack(density, dim=0)
 
     density = density.reshape((dense_xyz.shape[0], dense_xyz.shape[1], dense_xyz.shape[2]))

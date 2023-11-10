@@ -18,6 +18,8 @@ def get_opts():
                         help='downsample factor (<=1.0) for the images')
     parser.add_argument('--anti_aliasing_factor', type=float, default=1.0,
                         help='Render larger images then downsample')
+    parser.add_argument('--scale_poses', action='store_true', default=False,
+                        help='scale camera poses to be located within [-1, 1]')
 
     # model parameters
     parser.add_argument('--scale', type=float, default=0.5,
