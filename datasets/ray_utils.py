@@ -275,3 +275,31 @@ def generate_interpolated_path(poses: np.ndarray,
                         k=spline_degree,
                         s=smoothness)
     return points_to_poses(new_points)
+
+def get_rotation_matrix_from_vectors(v1, v2):
+    """
+    Compute the rotation matrix which transforms a 3-dim vector v1 to another 3-dim vector v2.
+
+    Inputs:
+        v1: (3,) original scene up vector
+        v2: (3,) target scene up vector (e.g. [0, 0, 1])
+
+    Outputs:
+        R: (3, 3) the rotation matrix
+    """
+    # if two numpy array are the same, return identity matrix
+    if np.allclose(v1, v2):
+        return np.eye(3)
+    v1 = v1 / np.linalg.norm(v1)
+    v2 = v2 / np.linalg.norm(v2)
+    v = np.cross(v1, v2)
+    s = np.linalg.norm(v)
+    c = np.dot(v1, v2)
+    vx = np.array([
+        [0, -v[2], v[1]],
+        [v[2], 0, -v[0]],
+        [-v[1], v[0], 0]
+    ])
+    R = np.eye(3) + vx + vx @ vx * (1 - c) / (s ** 2)
+    print('R:', R)
+    return R

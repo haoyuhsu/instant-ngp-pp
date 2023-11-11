@@ -12,6 +12,17 @@ from .color_utils import read_image, read_normal, read_normal_up, read_semantic
 
 from .base import BaseDataset
 
+scene_up_vector_dict = {
+    'donuts': [-0.08179121, 0.06804518, 0.9943239],
+    'dozer_nerfgun_waldo': [-0.75821614, 0.00911903, 0.6519395],
+    'espresso': [0.01166331, -0.00169178, 0.99993056],
+    'figurines': [0.02516231, -0.03249332, 0.99915516],
+    'ramen': [0.02744993, -0.01833784, 0.9994549],
+    'shoe_rack': [-0.10218759, 0.00686927, 0.99474144],
+    'teatime': [-0.04781878, 0.01938013, 0.998668],
+    'waldo_kitchen': [-0.06879088, -0.01131466, 0.997567],
+}
+
 def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
@@ -62,6 +73,15 @@ class LeRFDataset(BaseDataset):
             cam_mtx = cam_mtx @ np.diag([1, -1, -1, 1])  # OpenGL to OpenCV camera
             all_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
         all_render_c2w = torch.stack(all_c2w).float()
+
+        scene_name = os.path.split(root_dir)[-1]
+
+        # calculate alignment rotation matrix to make z-axis point up
+        v1 = normalize(np.array(scene_up_vector_dict[scene_name]))
+        v2 = np.array([0, 0, 1])
+        R = torch.FloatTensor(get_rotation_matrix_from_vectors(v1, v2))
+        # rotate c2w matrix by R
+        all_render_c2w[:, 0:3, :] = R @ all_render_c2w[:, 0:3, :]
         
         # self.up = -normalize(all_render_c2w[:,:3,1].mean(0))
         # print(f'up vector: {self.up}')
@@ -198,7 +218,7 @@ class LeRFDataset(BaseDataset):
         for idx in range(len(render_c2w)):
             c2w = np.array(render_c2w[idx][:3])
             rays_o, rays_d = \
-                get_rays(self.directions[idx], torch.FloatTensor(render_c2w))
+                get_rays(self.directions[idx], torch.FloatTensor(c2w))
             rays[idx] = torch.cat([rays_o, rays_d], 1).cpu() # (h*w, 6)
         return rays
 

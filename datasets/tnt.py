@@ -11,6 +11,10 @@ from .color_utils import read_image, read_normal, read_normal_up, read_semantic
 
 from .base import BaseDataset
 
+scene_up_vector_dict = {
+    'Playground': [-0.00720354, -0.9963133, -0.08548705],
+}
+
 def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
@@ -58,6 +62,15 @@ class tntDataset(BaseDataset):
                 cam_mtx = np.concatenate([cam_mtx, bottom], axis=0)
             all_c2w.append(torch.from_numpy(cam_mtx))  # C2W (4, 4) OpenCV
         all_render_c2w = torch.stack(all_c2w).float()
+
+        scene_name = os.path.split(root_dir)[-1]
+
+        # calculate alignment rotation matrix to make z-axis point up
+        v1 = normalize(np.array(scene_up_vector_dict[scene_name]))
+        v2 = np.array([0, 0, 1])
+        R = torch.FloatTensor(get_rotation_matrix_from_vectors(v1, v2))
+        # rotate c2w matrix by R
+        all_render_c2w[:, 0:3, :] = R @ all_render_c2w[:, 0:3, :]
 
         # self.up = -normalize(all_render_c2w[:,:3,1].mean(0))
         # print(f'up vector: {self.up}')

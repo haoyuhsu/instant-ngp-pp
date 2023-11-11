@@ -121,6 +121,8 @@ def get_opts():
                         help='render depth points')
     parser.add_argument('--chunk_size', type=int, default=131072, 
                         help='Divide image into chunks for rendering')
+    parser.add_argument('--pano_hw', type=int, nargs='+', default=[512, 1024],
+                        help='panorama height and width')
     
     # extract meshes
     parser.add_argument('--use_gsam_hq', action='store_true', default=False,

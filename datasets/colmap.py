@@ -11,6 +11,12 @@ from .colmap_utils import \
 
 from .base import BaseDataset
 
+scene_up_vector_dict = {
+    'bonsai': [-0.01668246, -0.76320696, -0.64593875],
+    'counter': [0.08917243, -0.8100452, -0.5795473],
+    'garden': [-0.032081, -0.8745662, -0.48384386],
+}
+
 def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
@@ -110,6 +116,15 @@ class ColmapDataset(BaseDataset):
         w2c_mats = np.stack(w2c_mats, 0)
         poses = np.linalg.inv(w2c_mats)[perm, :3] # (N_images, 3, 4) cam2world matrices
         all_render_c2w = torch.FloatTensor(poses)
+
+        scene_name = os.path.split(self.root_dir)[-1]
+
+        # calculate alignment rotation matrix to make z-axis point up
+        v1 = normalize(np.array(scene_up_vector_dict[scene_name]))
+        v2 = np.array([0, 0, 1])
+        R = torch.FloatTensor(get_rotation_matrix_from_vectors(v1, v2))
+        # rotate c2w matrix by R
+        all_render_c2w[:, 0:3, :] = R @ all_render_c2w[:, 0:3, :]
 
         # pts3d = read_points3d_binary(os.path.join(self.root_dir, 'sparse/0/points3D.bin'))
         # pts3d = np.array([pts3d[k].xyz for k in pts3d]) # (N, 3)
