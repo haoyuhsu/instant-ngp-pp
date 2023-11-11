@@ -1,0 +1,24 @@
+from edit_utils import get_object_3d_location, get_3d_asset, put_object_in_scene
+
+# Query: Place a cup on the table.
+table_loc = get_object_3d_location('table')
+cup = get_3d_asset('cup')
+put_object_in_scene(cup, table_loc)
+
+# Query: Build a castle on the ground and put an apple on top of it.
+ground_loc = get_object_3d_location('ground')
+castle = get_3d_asset('castle')
+apple = get_3d_asset('apple')
+put_object_in_scene(castle, ground_loc)
+castle_loc = get_object_3d_location('castle') 
+put_object_in_scene(apple, castle_loc)
+
+# Query: Put a mug on the table and a banana on the ground.
+table_loc = get_object_3d_location('table')
+mug = get_3d_asset('mug')
+put_object_in_scene(mug, table_loc)
+ground_loc = get_object_3d_location('ground')
+banana = get_3d_asset('banana')
+put_object_in_scene(banana, ground_loc)
+
+# Query: 

@@ -9,7 +9,7 @@ from retrieval.wrapper_objaverse import retrieve_object_from_objaverse
 Wrapper of the modular functions for GPT model to call
 '''
 
-def Localize3DObjectFromScene(scene_representation, object_name, N_SAMPLES=2000):
+def get_object_3d_location(scene_representation, object_name, N_SAMPLES=2000):
     print("Localizing object: {}".format(object_name))
     obj_mesh_path = None
     # find out if there exists extracted mesh
@@ -29,7 +29,7 @@ def Localize3DObjectFromScene(scene_representation, object_name, N_SAMPLES=2000)
     sampled_vertices = vertices[np.random.choice(vertices.shape[0], N_SAMPLES, replace=False)]
     return sampled_vertices
 
-def Retrieve3DObjectFromDatabase(object_name):
+def get_3d_asset(object_name):
     obj_info = retrieve_object_from_objaverse(object_name)
     if obj_info is None:
         print("Making one with generative model.")
@@ -45,7 +45,7 @@ def Retrieve3DObjectFromDatabase(object_name):
     # new_obj_info['object_path'] = '/home/max/Desktop/Blender_Stuff/insertion/assets/apple.glb'  # for debugging
     return new_obj_info
 
-def Insert3DObjectIntoScene(scene_representation, object_info, object_locations):
+def put_object_in_scene(scene_representation, object_info, object_locations):
     print("Inserting object: {}".format(object_info['object_name']))
     assert isinstance(object_info, dict)
     selected_positions = object_locations[random.randint(0, len(object_locations)-1)]
@@ -55,5 +55,6 @@ def Insert3DObjectIntoScene(scene_representation, object_info, object_locations)
     object_info['scale'] = 0.017
     scene_representation.insert_object(object_info)
 
-def ModifyTexturesOf3DObject(object, texture_name):
-    print("Texturing object {} into {}".format(object, texture_name))
+def change_object_texture(obj, texture_name):
+    print("Texturing object {} into {}".format(obj, texture_name))
+    return obj
