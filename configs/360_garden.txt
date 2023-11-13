@@ -35,6 +35,6 @@ embed_msk = False
 random_bg = True
 
 ### mesh extraction
-grid_dim = "512 128 512"
-min_bound = "-1. -0.3 -1."
-max_bound = "1. 0.15 1."
+grid_dim = "512 512 256"
+min_bound = "-2.0 -2.0 -0.8"
+max_bound = "2.0 2.0 0.5"
