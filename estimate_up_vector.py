@@ -3,6 +3,8 @@ import numpy as np
 from opt import get_opts
 import glob
 import json
+from PIL import Image
+from tqdm import tqdm, trange
 
 """
 First, you have to run tracking-with-deva on the object categories like 'floor', 'table, 'ground' or 'plane'...etc.
@@ -13,7 +15,8 @@ def estimate_up_vector(hparams, split='test'):
 
     frames_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/frames'
     track_with_deva_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/track_with_deva'
-    id_maps_dir = os.path.join(track_with_deva_dir, 'ID_maps')
+    # id_maps_dir = os.path.join(track_with_deva_dir, 'ID_maps')
+    annot_maps_dir = os.path.join(track_with_deva_dir, 'Annotations')
 
     # Note that the normal maps are already in world coordinate!
     normal_maps_path = sorted(glob.glob(os.path.join(frames_dir, '*.npy')))
@@ -30,7 +33,7 @@ def estimate_up_vector(hparams, split='test'):
 
     all_normal_dirs = []
 
-    for idx, annoation in enumerate(annotations):
+    for idx, annoation in tqdm(enumerate(annotations)):
 
         if idx >= N_frames:
             break
@@ -40,10 +43,18 @@ def estimate_up_vector(hparams, split='test'):
 
         # load segment map
         file_name = annoation['file_name'].split('.')[0]
-        segment_map = np.load(os.path.join(id_maps_dir, f'{file_name}.npy'))
+        # segment_map = np.load(os.path.join(id_maps_dir, f'{file_name}.npy'))
+        segment_map = Image.open(os.path.join(annot_maps_dir, f'{file_name}.png'))
 
         # mask the normal map with segment map
-        mask = segment_map != 0
+        # mask = segment_map != 0
+
+        # [0, 0, 0] is the background for rgb segmented images
+        mask_r = np.array(segment_map)[:, :, 0] != 0
+        mask_g = np.array(segment_map)[:, :, 1] != 0
+        mask_b = np.array(segment_map)[:, :, 2] != 0
+        mask = mask_r | mask_g | mask_b
+
         normal_dirs = normal_map[mask]
 
         # normalize the normal vectors
@@ -59,7 +70,7 @@ def estimate_up_vector(hparams, split='test'):
     best_up_vector = None
     best_inliers = None
     best_score = 0
-    for i in range(10000):
+    for i in trange(10000):
         idx = np.random.choice(len(all_normal_dirs), 3)
         normal_dir = np.mean(all_normal_dirs[idx], axis=0)
         normal_dir = normal_dir / np.linalg.norm(normal_dir)
@@ -72,6 +83,7 @@ def estimate_up_vector(hparams, split='test'):
             best_up_vector = normal_dir
             best_inliers = inliers
 
+    print(f'====={hparams.dataset_name}/{hparams.exp_name}=====')
     print(f'best score: {best_score}')
     print(f'best up vector: {best_up_vector}')
 
