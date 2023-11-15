@@ -13,14 +13,14 @@ from .color_utils import read_image, read_normal, read_normal_up, read_semantic
 from .base import BaseDataset
 
 scene_up_vector_dict = {
-    'donuts': [-0.08179121, 0.06804518, 0.9943239],
-    'dozer_nerfgun_waldo': [-0.75821614, 0.00911903, 0.6519395],
-    'espresso': [0.01166331, -0.00169178, 0.99993056],
-    'figurines': [0.02516231, -0.03249332, 0.99915516],
-    'ramen': [0.02744993, -0.01833784, 0.9994549],
-    'shoe_rack': [-0.10218759, 0.00686927, 0.99474144],
-    'teatime': [-0.04781878, 0.01938013, 0.998668],
-    'waldo_kitchen': [-0.06879088, -0.01131466, 0.997567],
+    'donuts': [0.0, 0.0, 1.0],
+    'dozer_nerfgun_waldo': [-0.76060444, 0.00627117, 0.6491853 ],
+    'espresso': [0.0, 0.0, 1.0],
+    'figurines': [0.0, 0.0, 1.0],
+    'ramen': [0.0, 0.0, 1.0],
+    'shoe_rack': [0.0, 0.0, 1.0],
+    'teatime': [0.0, 0.0, 1.0],
+    'waldo_kitchen': [0.0, 0.0, 1.0],
 }
 
 def normalize(v):

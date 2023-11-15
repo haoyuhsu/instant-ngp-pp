@@ -29,11 +29,11 @@ def estimate_up_vector(hparams, split='test'):
 
     # only use the first N_frames
     # N_frames = len(annotations)
-    N_frames = 50
+    N_frames = 200
 
     all_normal_dirs = []
 
-    for idx, annoation in tqdm(enumerate(annotations)):
+    for idx, annoation in enumerate(annotations):
 
         if idx >= N_frames:
             break
@@ -60,9 +60,13 @@ def estimate_up_vector(hparams, split='test'):
         # normalize the normal vectors
         normal_dirs = normal_dirs / np.linalg.norm(normal_dirs, axis=1, keepdims=True)
 
+        # subsample normal_dirs in each frame
+        normal_dirs = normal_dirs[::10]
         all_normal_dirs.append(normal_dirs)
 
     all_normal_dirs = np.concatenate(all_normal_dirs, axis=0)
+
+    print("number of normal vectors: ", len(all_normal_dirs))
 
     # run RANSAC to estimate the best aligned global vector.
     # for each sample we compute a normal vectors by averaging from 3 randomly sampled normal vectors.
@@ -70,8 +74,8 @@ def estimate_up_vector(hparams, split='test'):
     best_up_vector = None
     best_inliers = None
     best_score = 0
-    for i in trange(10000):
-        idx = np.random.choice(len(all_normal_dirs), 3)
+    for i in trange(2000):
+        idx = np.random.choice(len(all_normal_dirs), 1)
         normal_dir = np.mean(all_normal_dirs[idx], axis=0)
         normal_dir = normal_dir / np.linalg.norm(normal_dir)
         # an inlier is a normal vector that is within 1 degrees of the estimated vector

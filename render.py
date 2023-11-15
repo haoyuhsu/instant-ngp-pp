@@ -49,6 +49,9 @@ def render_chunks(model, rays_o, rays_d, chunk_size, **kwargs):
     return results
 
 def render_for_test(hparams, split='test'):
+
+    print("##### rendering for test on {}/{} #####".format(hparams.dataset_name, hparams.exp_name))
+
     os.makedirs(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}'), exist_ok=True)
     rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
     if hparams.use_skybox:
