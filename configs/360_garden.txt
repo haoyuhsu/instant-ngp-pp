@@ -4,6 +4,7 @@ exp_name = garden
 batch_size = 1024
 scale = 8.0
 num_epochs = 80
+downsample = 0.25
 
 scale_poses = True
 

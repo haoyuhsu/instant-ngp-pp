@@ -14,6 +14,18 @@ from utils import load_ckpt, save_image, convert_normal
 from opt import get_opts
 from einops import rearrange
 import skimage
+import glob
+
+def generate_video_from_frames(frames_path, video_name, fps=30):
+    frame_series = [np.array(Image.open(frame_path)) for frame_path in frames_path]  # return (0~255 in uint8)
+    # reshape the size of the frames to be divisible by 2 for video rendering
+    h, w = frame_series[0].shape[:2]
+    new_h = h if h % 2 == 0 else h - 1
+    new_w = w if w % 2 == 0 else w - 1
+    frame_series = [(skimage.transform.resize(frame, (new_h, new_w)) * 255.).astype(np.uint8) for frame in frame_series]
+    imageio.mimsave(video_name,
+        frame_series,
+        fps=fps, macro_block_size=1)
 
 def depth2img(depth, scale=16):
     depth = depth/scale
@@ -117,9 +129,12 @@ def render_for_test(hparams, split='test'):
 
     if hparams.render_interpolate:
         frames_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/frames_interpolate'
+        depth_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth_interpolate'
     else:
         frames_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/frames'
+        depth_dir = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth'
     os.makedirs(frames_dir, exist_ok=True)
+    os.makedirs(depth_dir, exist_ok=True)
 
     # save interpolated poses
     if hparams.render_interpolate:
@@ -129,13 +144,13 @@ def render_for_test(hparams, split='test'):
         for i in range(len(c2w_list)):
             np.savetxt(os.path.join(poses_dir, '{:0>4d}-pose.txt'.format(i)), c2w_list[i])
 
-    frame_series = []
-    depth_raw_series = []
-    depth_series = []
-    points_series = []
-    normal_series = []
-    normal_raw_series = []
-    semantic_series = []
+    # frame_series = []
+    # depth_raw_series = []
+    # depth_series = []
+    # points_series = []
+    # normal_series = []
+    # normal_raw_series = []
+    # semantic_series = []
 
     for img_idx in trange(len(render_traj_rays)):
         rays = render_traj_rays[img_idx][:, :6].cuda()
@@ -177,77 +192,65 @@ def render_for_test(hparams, split='test'):
             else:
                 rgb_frame = rearrange(results['rgb'].cpu().numpy(), '(h w) c -> h w c', h=h)
                 rgb_frame = (rgb_frame*255).astype(np.uint8)
-            frame_series.append(rgb_frame)
+            # frame_series.append(rgb_frame)
             cv2.imwrite(os.path.join(frames_dir, '{:0>4d}-rgb.png'.format(img_idx)), cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR))
         if hparams.render_semantic:
             sem_frame = semantic2img(rearrange(results['semantic'].squeeze(-1).cpu().numpy(), '(h w) -> h w', h=h), hparams.num_classes)
-            semantic_series.append(sem_frame)
+            # semantic_series.append(sem_frame)
         if hparams.render_depth:
             depth_raw = rearrange(results['depth'].cpu().numpy(), '(h w) -> h w', h=h)
-            depth_raw_series.append(depth_raw)
+            np.save(os.path.join(depth_dir, '{:0>4d}-depth.npy'.format(img_idx)), depth_raw.astype(np.float32))
+            # depth_raw_series.append(depth_raw.astype(np.float32))
             depth = depth2img(depth_raw, scale=2*hparams.scale)
-            depth_series.append(depth)
+            # depth_series.append(depth)
             cv2.imwrite(os.path.join(frames_dir, '{:0>4d}-depth.png'.format(img_idx)), cv2.cvtColor(depth, cv2.COLOR_RGB2BGR))
         
         if hparams.render_points:
             points = rearrange(results['points'].cpu().numpy(), '(h w) c -> h w c', h=h)
-            points_series.append(points)
+            # points_series.append(points)
 
         if hparams.render_normal:
             pose = pose.cpu().numpy()
             normal_pred = rearrange(results['normal_pred'].cpu().numpy(), '(h w) c -> h w c', h=h)+1e-6
             normal_vis = (convert_normal(normal_pred, pose) + 1)/2
-            save_image((normal_vis), os.path.join(frames_dir, '{:0>3d}-normal.png'.format(img_idx)))
-            normal_series.append((255*normal_vis).astype(np.uint8))
+            save_image((normal_vis), os.path.join(frames_dir, '{:0>4d}-normal.png'.format(img_idx)))
+            # normal_series.append((255*normal_vis).astype(np.uint8))
             normal_raw = rearrange(results['normal_raw'].cpu().numpy(), '(h w) c -> h w c', h=h)+1e-6
             normal_vis = (convert_normal(normal_raw, pose) + 1)/2
-            save_image((normal_vis), os.path.join(frames_dir, '{:0>3d}-normal-raw.png'.format(img_idx)))
-            normal_raw_series.append((255*normal_vis).astype(np.uint8))
+            save_image((normal_vis), os.path.join(frames_dir, '{:0>4d}-normal-raw.png'.format(img_idx)))
+            # normal_raw_series.append((255*normal_vis).astype(np.uint8))
                         
         torch.cuda.synchronize()
 
-    # reshape the size of the frames to divisible by 2 for video rendering in frame_series, depth_series, normal_series, normal_raw_series
-    new_h = h if h % 2 == 0 else h - 1
-    new_w = w if w % 2 == 0 else w - 1
-    sk_resize = skimage.transform.resize
-    frame_series = [(sk_resize(frame, (new_h, new_w)) * 255.).astype(np.uint8) for frame in frame_series]
-    depth_series = [(sk_resize(frame, (new_h, new_w)) * 255.).astype(np.uint8) for frame in depth_series]
-    normal_series = [(sk_resize(frame, (new_h, new_w)) * 255.).astype(np.uint8) for frame in normal_series]
-    normal_raw_series = [(sk_resize(frame, (new_h, new_w)) * 255.).astype(np.uint8) for frame in normal_raw_series]
-
     if hparams.render_rgb:
-        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_rgb.mp4'),
-                        frame_series,
-                        fps=30, macro_block_size=1)
+        frames_path = sorted(glob.glob(os.path.join(frames_dir, '*rgb.png')))
+        generate_video_from_frames(frames_path, os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_rgb.mp4'))
 
     if hparams.render_semantic:
-        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_semantic.mp4'),
-                        semantic_series,
-                        fps=30, macro_block_size=1)
-    if hparams.render_depth:
-        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_depth.mp4'),
-                        depth_series,
-                        fps=30, macro_block_size=1)
-        
-        depth_raw_all = np.stack(depth_raw_series) #(n_frames, h ,w)
-        if hparams.render_interpolate:
-            path = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth_raw_interpolate.npy'
-        else:
-            path = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth_raw.npy'
-        np.save(path, depth_raw_all)
+        frames_path = sorted(glob.glob(os.path.join(frames_dir, '*semantic.png')))
+        generate_video_from_frames(frames_path, os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_semantic.mp4'))
 
-    if hparams.render_points:
-        points_all = np.stack(points_series)
-        path = f'results/{hparams.dataset_name}/{hparams.exp_name}/points.npy'
-        np.save(path, points_all)
+    if hparams.render_depth:
+        frames_path = sorted(glob.glob(os.path.join(frames_dir, '*depth.png')))
+        generate_video_from_frames(frames_path, os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_depth.mp4'))
+        
+        # depth_raw_all = np.stack(depth_raw_series) #(n_frames, h ,w)
+        # if hparams.render_interpolate:
+        #     path = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth_raw_interpolate.npy'
+        # else:
+        #     path = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth_raw.npy'
+        # np.save(path, depth_raw_all)
+
+    # if hparams.render_points:
+    #     points_all = np.stack(points_series)
+    #     path = f'results/{hparams.dataset_name}/{hparams.exp_name}/points.npy'
+    #     np.save(path, points_all)
 
     if hparams.render_normal:
-        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_normal.mp4'),
-                        normal_series,
-                        fps=30, macro_block_size=1)
-        imageio.mimsave(os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_normal_raw.mp4'),
-                        normal_raw_series,
-                        fps=30, macro_block_size=1)
+        frames_path = sorted(glob.glob(os.path.join(frames_dir, '*normal.png')))
+        generate_video_from_frames(frames_path, os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_normal.mp4'))
+        frames_path = sorted(glob.glob(os.path.join(frames_dir, '*normal-raw.png')))
+        generate_video_from_frames(frames_path, os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}', 'render_normal_raw.mp4'))
 
 if __name__ == '__main__':
     hparams = get_opts()
