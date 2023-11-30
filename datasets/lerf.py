@@ -41,6 +41,9 @@ class LeRFDataset(BaseDataset):
         sort_indices = [i[0] for i in sorted(enumerate(all_file_paths), key=lambda x:x[1])]
         meta['frames'] = [meta['frames'][i] for i in sort_indices]
 
+        # Get images directory
+        self.imgs_dir = os.path.join(root_dir, 'images')
+
         # Make sure the number of images matches the number of frames
         # number_list = [i + 1 for i in range(len(imgs))]
         # for f in meta['frames']:
@@ -83,8 +86,7 @@ class LeRFDataset(BaseDataset):
         # rotate c2w matrix by R
         all_render_c2w[:, 0:3, :] = R @ all_render_c2w[:, 0:3, :]
         
-        # self.up = -normalize(all_render_c2w[:,:3,1].mean(0))
-        # print(f'up vector: {self.up}')
+        self.up_vector = v1
 
         # compute scale factor from all camera poses
         scale = torch.linalg.norm(all_render_c2w[..., 0:3, 3], axis=-1).max()
@@ -147,6 +149,7 @@ class LeRFDataset(BaseDataset):
         else: # training NeRF
             self.rays = torch.FloatTensor(self.read_rgb(img_path_list))
             self.normals = torch.FloatTensor(self.read_normal(normal_path_list))
+            self.render_traj_rays = self.get_path_rays(all_render_c2w)
 
         self.imgs = img_path_list
     

@@ -37,6 +37,8 @@ class tntDataset(BaseDataset):
         pose_path_list = sorted(glob.glob(os.path.join(self.root_dir, 'pose', prefix+'*.txt')), key=sort_key)
         normal_path_list = sorted(glob.glob(os.path.join(self.root_dir, 'normal', prefix+'*.npy')), key=sort_key)
         depth_path_list = sorted(glob.glob(os.path.join(self.root_dir, 'depth', prefix+'*.npy')), key=sort_key)
+
+        self.imgs_dir = os.path.join(root_dir, 'rgb')
         
         tmp_img = Image.open(img_path_list[0])
         w, h = tmp_img.width, tmp_img.height
@@ -71,6 +73,8 @@ class tntDataset(BaseDataset):
         R = torch.FloatTensor(get_rotation_matrix_from_vectors(v1, v2))
         # rotate c2w matrix by R
         all_render_c2w[:, 0:3, :] = R @ all_render_c2w[:, 0:3, :]
+
+        self.up_vector = v1
 
         # self.up = -normalize(all_render_c2w[:,:3,1].mean(0))
         # print(f'up vector: {self.up}')
@@ -118,6 +122,7 @@ class tntDataset(BaseDataset):
         else: # training NeRF
             self.rays = torch.FloatTensor(self.read_rgb(img_path_list))
             self.normals = torch.FloatTensor(self.read_normal(normal_path_list))
+            self.render_traj_rays = self.get_path_rays(all_render_c2w)
 
         self.imgs = img_path_list
 

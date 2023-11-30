@@ -4,6 +4,9 @@ output/
 ckpts/
 logs/
 lightning_logs/
+cache/
+gpt/cache/
+tracking/saves/
 
 __pycache__/
 *.py[cod]

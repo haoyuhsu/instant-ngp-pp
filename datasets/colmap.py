@@ -103,6 +103,8 @@ class ColmapDataset(BaseDataset):
         img_path_list = [os.path.join(self.root_dir, folder, name)
                      for name in sorted(img_names)]
         
+        self.imgs_dir = os.path.join(self.root_dir, folder)
+        
         normal_path_list = sorted(glob.glob(os.path.join(self.root_dir, 'normal', '*.npy')))
         depth_path_list = sorted(glob.glob(os.path.join(self.root_dir, 'depth', '*.npy')))
 
@@ -125,6 +127,8 @@ class ColmapDataset(BaseDataset):
         R = torch.FloatTensor(get_rotation_matrix_from_vectors(v1, v2))
         # rotate c2w matrix by R
         all_render_c2w[:, 0:3, :] = R @ all_render_c2w[:, 0:3, :]
+
+        self.up_vector = v1
 
         # pts3d = read_points3d_binary(os.path.join(self.root_dir, 'sparse/0/points3D.bin'))
         # pts3d = np.array([pts3d[k].xyz for k in pts3d]) # (N, 3)
@@ -180,6 +184,7 @@ class ColmapDataset(BaseDataset):
         else: # training NeRF
             self.rays = torch.FloatTensor(self.read_rgb(img_path_list))
             self.normals = torch.FloatTensor(self.read_normal(normal_path_list))
+            self.render_traj_rays = self.get_path_rays(all_render_c2w)
 
         self.imgs = img_path_list
 

@@ -205,7 +205,7 @@ def setup_blender_env():
 
     # use blender cycles
     bpy.context.scene.render.engine = 'CYCLES'
-    bpy.context.scene.cycles.samples = 256
+    bpy.context.scene.cycles.samples = 64  # 64 for testing, 256 or higher for final
     bpy.context.scene.cycles.device = 'GPU'
     bpy.context.scene.render.image_settings.file_format = 'PNG'
     bpy.context.scene.render.film_transparent = True
@@ -226,8 +226,9 @@ def setup_blender_env():
         d["use"] = 1 # Using all devices, include GPU and CPU
         print(d["name"], d["use"])
 
-    bpy.context.scene.world.light_settings.use_ambient_occlusion = True  # turn AO on
-    bpy.context.scene.world.light_settings.ao_factor = 0.2  # set it to 0.5
+    # TODO: figure out why AttributeError: 'WorldLighting' object has no attribute 'use_ambient_occlusion'
+    # bpy.context.scene.world.light_settings.use_ambient_occlusion = True  # turn AO on
+    # bpy.context.scene.world.light_settings.ao_factor = 0.2  # set it to 0.5
 
     # nodes
     # bpy.context.scene.view_layers["ViewLayer"].use_pass_normal = True
@@ -272,7 +273,7 @@ def get_alignment_rot(v1, v2):
         R: (3, 3) rotation matrix
     """
     R = get_rot_mat(v1, v2)
-    return Matrix(R)
+    return R
 
 def create_camera_list(c2w, K):
     cam_list = []
@@ -403,14 +404,14 @@ def run_blender_render(config_path):
 
     setup_blender_env()
     add_env_lighting(env_map_path)
-    align_R = get_alignment_rot(np.array([0, 0, 1]), scene_up_vector)
+    # align_R = get_alignment_rot(np.array([0, 0, 1]), scene_up_vector)
 
     # insert objects
     for obj_info in insert_object_info:
         obj_path = obj_info['object_path']
         pos = np.array(obj_info['pos'])
         rot = np.array(obj_info['rot'])
-        rot = align_R @ rot
+        # rot = align_R @ rot
         scale = obj_info['scale']
         _ = insert_object(obj_path, pos, rot, scale)
 
@@ -425,7 +426,7 @@ def run_blender_render(config_path):
     for obj_info in insert_object_info:
         pos = np.array(obj_info['pos'])
         rot = np.array(obj_info['rot'])
-        rot = align_R @ rot
+        # rot = align_R @ rot
         scale = obj_info['scale']
         add_shadow_catcher(pos, rot, scale, option='plane')
         # add_shadow_catcher(pos, rot, scale, option='mesh', results_dir=results_dir)

@@ -67,7 +67,98 @@ def sample_panorama(
     samples = samples.permute(0, 2, 3, 1)[0, 0] #(n, c)
     return samples
 
-def render_panorama(hparams):
+def render_panorama(
+    hparams: dict,
+    model: torch.nn.Module,
+    output_dir: str,
+    embedding_a: torch.Tensor = None,
+    origin: torch.Tensor = None,
+):
+    # the 3 following vectors depend on dataset (now unified)
+    # hparams.pano_hw = (512, 1024)
+    hparams.pano_hw = (1024, 2048)
+    hparams.v_right = np.array([1, 0, 0])
+    hparams.v_forward = np.array([0, 1, 0])
+    hparams.v_down = np.array([0, 0, -1])
+    hparams.pano_radius = 0.5
+
+    H, W = hparams.pano_hw
+    cx = W/2
+    cy = H/2
+
+    device = 'cuda'
+    if origin is None:
+        origin = torch.zeros(3).to(device)
+
+    right = torch.FloatTensor(hparams.v_right).to(device)
+    forward = torch.FloatTensor(hparams.v_forward).to(device)
+    down = torch.FloatTensor(hparams.v_down).to(device)
+    
+    grid = create_meshgrid(H, W, False, device=device)[0] # (H, W, 2)
+    u, v = grid.unbind(-1)
+    
+    thetas = ((u-cx+0.5)*2*torch.pi/W).reshape(-1, 1) # longitude (-pi, pi), angle from forward direction
+    phis = ((v-cy+0.5)*torch.pi/H).reshape(-1, 1) # latitude (-pi/2, pi/2), angle from 
+    directions = torch.sin(phis)*down.unsqueeze(0) + torch.cos(phis)*torch.sin(thetas)*right.unsqueeze(0) + torch.cos(phis)*torch.cos(thetas)*forward.unsqueeze(0)
+    directions = F.normalize(directions, p=2, dim=-1, eps=1e-9)
+    rays_d = directions.reshape(-1, 3).cuda()
+    rays_o = origin.repeat((rays_d.shape[0], 1)).cuda()
+    rays_o += rays_d * hparams.pano_radius
+    render_kwargs = {'test_time': True,
+                    'T_threshold': 1e-2,
+                    'use_skybox': hparams.use_skybox,
+                    'render_rgb': hparams.render_rgb,
+                    'render_depth': hparams.render_depth,
+                    'img_wh': (W, H)}
+    if hparams.embed_a:
+            render_kwargs['embedding_a'] = embedding_a
+    
+    assert rays_o.shape[0] == rays_d.shape[0]
+
+    # batchify rays_o and rays_d to avoid OOM
+    chunk_size = 512 * 512
+    chunk_n = math.ceil(rays_o.shape[0] / chunk_size)
+    rgb_list = []
+    opacity_list = []
+    for i in range(chunk_n):
+        rays_o_chunk = rays_o[i*chunk_size:(i+1)*chunk_size]
+        rays_d_chunk = rays_d[i*chunk_size:(i+1)*chunk_size]
+        results = render(model, rays_o_chunk, rays_d_chunk, **render_kwargs)
+        rgb_list.append(results['rgb'].cpu().numpy())
+        opacity_list.append(results['opacity'].cpu().numpy())
+    rgb = np.concatenate(rgb_list, axis=0)
+    opacity = np.concatenate(opacity_list, axis=0)
+
+    # results = render(model, rays_o, rays_d, **render_kwargs)
+
+    os.makedirs(os.path.join(output_dir, 'panaroma'), exist_ok=True)
+    
+    rgb = rearrange(rgb, '(h w) c -> h w c', h=H)
+    # rgb = rearrange(results['rgb'].cpu().numpy(), '(h w) c -> h w c', h=H)
+    rgb = (rgb*255).astype(np.uint8)
+    imageio.imsave(os.path.join(output_dir, 'panaroma/rgb.png'), rgb)
+
+    opacity = rearrange(opacity, '(h w) -> h w', h=H)
+    opacity = (opacity*255).astype(np.uint8)
+    # opacity = rearrange(results['opacity'], '(h w) -> h w', h=H)
+    # opacity = guided_filter(opacity, opacity, r=10, eps=0.5)
+    # opacity = (opacity*255).cpu().numpy().astype(np.uint8)
+    imageio.imsave(os.path.join(output_dir, 'panaroma/opacity.png'), opacity)
+
+    inpaint = opacity < 0.5
+    mask = np.zeros_like(opacity)
+    mask[inpaint] = 255
+    imageio.imsave(os.path.join(output_dir, 'panaroma/mask.png'), mask)
+
+    # validate sample_panorama
+    # rgb = torch.FloatTensor(rgb).to(device) / 255
+    # samples = sample_panorama(directions, rgb, forward, up, right)
+    # samples = rearrange(samples, '(h w) c -> h w c', h=H)
+    # print('Diff of rgb & samples:', torch.sum(torch.abs(rgb-samples)))
+    # samples = (samples * 255).cpu().numpy().astype(np.uint8)
+    # imageio.imsave(os.path.join(dir_out, 'samples.png'), samples)
+
+def test_render_panorama(hparams):
     dir_out = os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}')
     os.makedirs(dir_out, exist_ok=True)
     rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
@@ -203,5 +294,5 @@ def test_grid_sample():
 
 if __name__ == '__main__':
     hparams = get_opts()
-    render_panorama(hparams)
+    test_render_panorama(hparams)
     # test_grid_sample()

@@ -18,6 +18,8 @@ from render import render_chunks, depth2img, semantic2img
 from blender import blend
 import json
 
+from render_panorama import render_panorama
+
 class SceneRepresentation():
     def __init__(self, hparams):
         self.hparams = hparams
@@ -25,10 +27,14 @@ class SceneRepresentation():
         self.results_dir = os.path.join('results', hparams.dataset_name, hparams.exp_name)
         os.makedirs(os.path.join(self.results_dir), exist_ok=True)
         self.load_dataset()
-        self.load_model()
+        # self.load_model()
 
+        self.tracking_results_dir = os.path.join(self.results_dir, 'track_with_deva')
         self.semantic_mesh_dir = os.path.join(self.results_dir, 'semantic_mesh_deva')
-        self.set_up_vector()
+        os.makedirs(self.tracking_results_dir, exist_ok=True)
+        os.makedirs(self.semantic_mesh_dir, exist_ok=True)
+
+        self.up_vector = self.dataset.up_vector
 
         self.inserted_objects = []
         self.blender_cfg = {}
@@ -37,16 +43,6 @@ class SceneRepresentation():
         assert isinstance(object_info, dict)
         assert isinstance(object_info['pos'], np.ndarray)
         self.inserted_objects.append(object_info)
-
-    def set_up_vector(self):
-        if self.hparams.dataset_name == 'tnt':
-            self.up_vector = np.array([0, -1, 0])
-        elif self.hparams.dataset_name == 'lerf':
-            self.up_vector = np.array([0, 0, 1])  # this one not quite sure
-        elif self.hparams.dataset_name == '360':
-            self.up_vector = np.array([0, 1, 0])  # this one not quite sure
-        else:
-            raise NotImplementedError
 
     def load_model(self):
         hparams = self.hparams
@@ -67,6 +63,14 @@ class SceneRepresentation():
         self.model = model
         self.ckpt_path = ckpt_path
 
+        embed_a_length = hparams.embed_a_len
+        if hparams.embed_a:
+            embedding_a = torch.nn.Embedding(self.N_imgs, embed_a_length).cuda() 
+            load_ckpt(embedding_a, self.ckpt_path, model_name='embedding_a', \
+                prefixes_to_ignore=["model", "msk_model"])
+            embedding_a = embedding_a(torch.tensor([0]).cuda())
+        self.embedding_a = embedding_a
+
     def load_dataset(self):
         hparams = self.hparams
         img_dir_name = None
@@ -81,8 +85,9 @@ class SceneRepresentation():
                 'render_train': hparams.render_train,
                 'render_interpolate': hparams.render_interpolate,
                 'render_traj': hparams.render_traj,
-                'anti_aliasing_factor': hparams.anti_aliasing_factor}
-        dataset = dataset(split='test', **kwargs)
+                'anti_aliasing_factor': hparams.anti_aliasing_factor,
+                'scale_poses': hparams.scale_poses}
+        dataset = dataset(split='train', **kwargs)
         self.dataset = dataset
         self.N_imgs = N_imgs
 
@@ -91,6 +96,7 @@ class SceneRepresentation():
         # 1. render rgb frames & depth maps of the scene
         if not skip_render_NeRF:
             print('Rendering the rgb frames & depth maps with NeRF...')
+            self.load_model()
             self.render_from_NeRF()
         # 2. use blender to render the scene with objects inserted, then compositing
         if self.inserted_objects:
@@ -108,7 +114,10 @@ class SceneRepresentation():
         new_cfg['K'] = self.dataset.K.cpu().numpy().tolist()
         new_cfg['c2w'] = self.dataset.c2w.cpu().numpy().tolist()
         new_cfg['up_vector'] = self.up_vector.tolist()
-        new_cfg['env_map_path'] = os.path.join(self.results_dir, 'graveyard_pathways_4k.exr')  # temporary file
+        new_cfg['env_map_path'] = os.path.join(self.results_dir, 'panaroma', 'rgb.png')
+        if not os.path.exists(new_cfg['env_map_path']):
+            print('Rendering panorama...')
+            render_panorama(self.hparams, self.model, self.results_dir, self.embedding_a)
         self.blender_cfg.update(new_cfg)
 
     def render_from_blender(self):    
@@ -135,13 +144,6 @@ class SceneRepresentation():
         model = self.model
         dataset = self.dataset
         results_dir = self.results_dir
-
-        embed_a_length = hparams.embed_a_len
-        if hparams.embed_a:
-            embedding_a = torch.nn.Embedding(self.N_imgs, embed_a_length).cuda() 
-            load_ckpt(embedding_a, self.ckpt_path, model_name='embedding_a', \
-                prefixes_to_ignore=["model", "msk_model"])
-            embedding_a = embedding_a(torch.tensor([0]).cuda())
         
         # setup output directory
         if hparams.render_interpolate:
@@ -186,7 +188,7 @@ class SceneRepresentation():
             if hparams.dataset_name in ['colmap', 'nerfpp', 'tnt', 'kitti']:
                 render_kwargs['exp_step_factor'] = 1/256
             if hparams.embed_a:
-                render_kwargs['embedding_a'] = embedding_a
+                render_kwargs['embedding_a'] = self.embedding_a
 
             rays_o = rays[:, :3]
             rays_d = rays[:, 3:6]
@@ -235,3 +237,7 @@ class SceneRepresentation():
             else:
                 path = f'results/{hparams.dataset_name}/{hparams.exp_name}/depth_raw.npy'
             np.save(path, depth_raw_all)
+
+if __name__ == '__main__':
+    hparams = get_opts()
+    scene_representation = SceneRepresentation(hparams)

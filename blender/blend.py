@@ -39,6 +39,15 @@ def read_rgb_frames(dir_path):
     rgbs = np.array(rgbs)
     return rgbs
 
+def read_depth_frames(dir_path):
+    paths = sorted(glob.glob(os.path.join(dir_path, '*depth.npy')), key=sort_key)
+    depths = []
+    for path in paths:
+        d = np.load(path)
+        depths.append(d)
+    depths = np.array(depths)
+    return depths
+
 def parse_obj_rgb(dir_path):
     paths = sorted(os.path.join(dir_path, img) for img in os.listdir(dir_path))
     rgbs = []
@@ -63,7 +72,7 @@ def blend_frames(root_dir):
     blend_results_dir = os.path.join(root_dir, 'blend_results')
 
     vdo_rgb = read_rgb_frames(os.path.join(root_dir, 'frames'))
-    vdo_depth  = np.load(os.path.join(root_dir, 'depth_raw.npy'))
+    vdo_depth  = read_depth_frames(os.path.join(root_dir, 'depth'))
     obj_rgb = parse_obj_rgb(os.path.join(blend_results_dir, 'rgb'))
     obj_depth = parse_obj_depth(os.path.join(blend_results_dir, 'depth'))
     obj_rgb_shadow = parse_obj_rgb(os.path.join(blend_results_dir, 'rgb_shadow'))
@@ -98,7 +107,7 @@ def blend_frames(root_dir):
         frame[mask] = o_c[mask] * alpha[..., None] + v_c[mask] * (1 - alpha[..., None])   # blend object image with background image
 
         frames.append(frame)
-        path = os.path.join(out_img_dir, '{:0>3d}.png'.format(i))
+        path = os.path.join(out_img_dir, '{:0>4d}.png'.format(i))
         Image.fromarray(frame).save(path)
     
     frames = np.array(frames)

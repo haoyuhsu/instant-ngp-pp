@@ -1,6 +1,6 @@
 einops==0.4.1
 kornia==0.6.5
-pytorch-lightning
+pytorch-lightning==1.8.1
 matplotlib==3.5.2
 opencv-python==4.6.0.66
 lpips
@@ -20,3 +20,7 @@ ipdb
 pvlib
 wandb
 utm
+
+open3d
+objaverse
+openai

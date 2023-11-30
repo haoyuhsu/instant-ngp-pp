@@ -17,6 +17,9 @@ import math
 from einops import rearrange, repeat, reduce
 import vren
 import json
+import glob
+
+from scene_representation import SceneRepresentation
 
 MAX_SAMPLES = 1024
 NEAR_DISTANCE = 0.01
@@ -349,7 +352,14 @@ def convert_samples_to_ply(
     ply_data.write(ply_filename_out)
     
 
-def extract_semantic_meshes(hparams, split='test'):
+def testing_extract_semantic_meshes(hparams, split='train'):
+    """
+    Testing function for extracting semantic meshes from a trained model.
+
+    Input:
+        hparams: configs
+        split: 'test' or 'train'
+    """
     # if hparams.use_gsam_hq:
     #     semantic_mesh_dir = os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}/semantic_mesh_hq')
     # else:
@@ -396,7 +406,7 @@ def extract_semantic_meshes(hparams, split='test'):
             'anti_aliasing_factor': hparams.anti_aliasing_factor,
             'scale_poses': hparams.scale_poses}
     
-    dataset = dataset(split='test', **kwargs)
+    dataset = dataset(split='train', **kwargs)
     w, h = dataset.img_wh
     if hparams.render_traj or hparams.render_train:
         render_traj_rays = dataset.render_traj_rays
@@ -583,67 +593,53 @@ def extract_semantic_meshes(hparams, split='test'):
             level=0.2
         )
 
+def extract_semantic_meshes(
+    scene_representation: SceneRepresentation,
+    object_tracking_results_dir: str,
+    unprojected_method: str = 'alpha_composite_weights',
+    mesh_extraction_method: str = 'marching_cubes',
+):
+    assert unprojected_method in ['alpha_composite_weights', 'rendered_depth']
+    assert mesh_extraction_method in ['marching_cubes', 'sampled_from_whole_mesh']
 
-def estimate_range_of_scene(hparams, split='test'):
-    rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
-    if hparams.use_skybox:
-        print('render skybox!')
-    model = NGP(
-        scale=hparams.scale,
-        rgb_act=rgb_act, 
-        use_skybox=hparams.use_skybox, 
-        embed_a=hparams.embed_a, 
-        embed_a_len=hparams.embed_a_len,
-        classes=hparams.num_classes).cuda()
-    if hparams.ckpt_load:
-        ckpt_path = hparams.ckpt_load
-    else: 
-        ckpt_path = os.path.join('ckpts', hparams.dataset_name, hparams.exp_name, 'last_slim.ckpt')
+    output_dir = scene_representation.semantic_mesh_dir
 
-    load_ckpt(model, ckpt_path, prefixes_to_ignore=['embedding_a', 'msk_model'])
-    print('Loaded checkpoint: {}'.format(ckpt_path))
-
-    if os.path.exists(os.path.join(hparams.root_dir, 'images')):
-        img_dir_name = 'images'
-    elif os.path.exists(os.path.join(hparams.root_dir, 'rgb')):
-        img_dir_name = 'rgb'
-
-    N_imgs = len(os.listdir(os.path.join(hparams.root_dir, img_dir_name)))
-
-    embed_a_length = hparams.embed_a_len
-    if hparams.embed_a:
-        embedding_a = torch.nn.Embedding(N_imgs, embed_a_length).cuda() 
-        load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
-            prefixes_to_ignore=["model", "msk_model"])
-        embedding_a = embedding_a(torch.tensor([0]).cuda())    
-
-    dataset = dataset_dict[hparams.dataset_name]
-    kwargs = {'root_dir': hparams.root_dir,
-            'downsample': hparams.downsample,
-            'render_train': hparams.render_train,
-            'render_traj': hparams.render_traj,
-            'anti_aliasing_factor': hparams.anti_aliasing_factor}
+    semantic_label = object_tracking_results_dir.split('/')[-1]
+    output_path = os.path.join(output_dir, semantic_label + '.ply')
     
-    dataset = dataset(split='test', **kwargs)
-    w, h = dataset.img_wh
-    if hparams.render_traj or hparams.render_train:
-        render_traj_rays = dataset.render_traj_rays
-    else:
-        # render_traj_rays = dataset.rays
-        render_traj_rays = {}
-        print("generating rays' origins and directions!")
-        for img_idx in trange(len(dataset.poses)):
-            rays_o, rays_d = get_rays(dataset.directions.cuda(), dataset[img_idx]['pose'].cuda())
-            render_traj_rays[img_idx] = torch.cat([rays_o, rays_d], 1).cpu()
+    hparams = scene_representation.hparams
+    model = scene_representation.model
+    dataset = scene_representation.dataset
+    render_traj_rays = dataset.render_traj_rays
+    embedding_a = scene_representation.embedding_a
+    results_dir = scene_representation.results_dir
 
-    # compute the min and max bounds of camera positions
-    poses = dataset.poses
-    camera_pos = torch.stack([pose[:, 3] for pose in poses])
-    camera_pos_min = torch.min(camera_pos, dim=0)[0]
-    camera_pos_max = torch.max(camera_pos, dim=0)[0]
+    num_categories = 1
 
-    x_min = y_min = z_min = np.inf
-    x_max = y_max = z_max = -np.inf
+    # use depth map for 'rendered_depth' method
+    if unprojected_method == 'rendered_depth':
+        depth_dir = os.path.join(results_dir, "depth")
+        depth_map_list = sorted(glob.glob(os.path.join(depth_dir, "*.npy")))
+
+    grid_dim = np.array([int(grid_) for grid_ in hparams.grid_dim.split(' ')])
+    min_bound = np.array([float(min_) for min_ in hparams.min_bound.split(' ')])
+    max_bound = np.array([float(max_) for max_ in hparams.max_bound.split(' ')])
+
+    x_dim, y_dim, z_dim = grid_dim
+    x_min, y_min, z_min = min_bound
+    x_max, y_max, z_max = max_bound
+
+    grid_dim = torch.tensor(grid_dim).int()
+    xyz_min = torch.FloatTensor([[x_min, y_min, z_min]])
+    xyz_max = torch.FloatTensor([[x_max, y_max, z_max]])
+    bbox = torch.cat([xyz_min, xyz_max], dim=0)
+
+    grid_dim = grid_dim.cuda()
+    xyz_min = xyz_min.cuda()
+    xyz_max = xyz_max.cuda()
+
+    semantic_grid = torch.zeros((grid_dim[0], grid_dim[1], grid_dim[2])).cuda()  # (x, y, z)
+    # semantic_grid = torch.zeros((grid_dim[0], grid_dim[1], grid_dim[2], num_categories)).cuda()  # (x, y, z, c)
 
     for img_idx in trange(len(render_traj_rays)):
         rays = render_traj_rays[img_idx][:, :6].cuda()
@@ -651,58 +647,125 @@ def estimate_range_of_scene(hparams, split='test'):
             'img_idx': img_idx,
             'test_time': True,
             'T_threshold': 1e-2,
-            'use_skybox': hparams.use_skybox,
             'render_rgb': hparams.render_rgb,
             'render_depth': hparams.render_depth,
-            'render_normal': hparams.render_normal,
-            'render_sem': hparams.render_semantic,
-            'num_classes': hparams.num_classes,
             'img_wh': dataset.img_wh,
             'anti_aliasing_factor': hparams.anti_aliasing_factor
         }
+
         if hparams.dataset_name in ['colmap', 'nerfpp', 'tnt', 'kitti']:
             render_kwargs['exp_step_factor'] = 1/256
         if hparams.embed_a:
             render_kwargs['embedding_a'] = embedding_a
+        
+        img_path = dataset.imgs[img_idx]
+        file_name = img_path.split('/')[-1].split('.')[0]
+        semantic_img = Image.open(os.path.join(object_tracking_results_dir, "Annotations", file_name+'.png'))
 
-        chunk_size = 512 * 512
+        # generate semantic map by ignoring the background (with color = [0, 0, 0])
+        semantic_map_full = (np.sum(np.array(semantic_img), axis=2) != 0).astype(np.uint8)
+        semantic_map_full = torch.from_numpy(semantic_map_full).long()
+        semantic_map_full = rearrange(semantic_map_full, 'h w -> (h w)')
+
+        # skip rendering background pixels in the semantic map (INCREASE RENDERING SPEED)
+        non_bg_mask = semantic_map_full != 0
+        semantic_map_full = semantic_map_full[non_bg_mask]
+        rays = rays[non_bg_mask]
+
         rays_o = rays[:, :3]
         rays_d = rays[:, 3:6]
-        # results = render_chunks(model, rays_o, rays_d, chunk_size, **render_kwargs)
 
+        if unprojected_method == 'rendered_depth':
+            depth_map_full = np.load(depth_map_list[img_idx])
+            depth_map_full = torch.from_numpy(depth_map_full).float()
+            depth_map_full = rearrange(depth_map_full, 'h w -> (h w)')
+            depth_map_full = depth_map_full[non_bg_mask]
+
+        chunk_size = 512 * 512
         chunk_n = math.ceil(rays.shape[0]/chunk_size)
+
+        # batchify rays for the rendering process
         for i in range(chunk_n):
+
             rays_o_chunk = rays_o[i*chunk_size: (i+1)*chunk_size]
             rays_d_chunk = rays_d[i*chunk_size: (i+1)*chunk_size]
-            results = render(model, rays_o_chunk, rays_d_chunk, **render_kwargs)
-            depth = results['depth']
-            points_3d = rays_o_chunk + rays_d_chunk * depth.unsqueeze(-1)
-            x_min = min(x_min, torch.min(points_3d[:, 0]))
-            x_max = max(x_max, torch.max(points_3d[:, 0]))
-            y_min = min(y_min, torch.min(points_3d[:, 1]))
-            y_max = max(y_max, torch.max(points_3d[:, 1]))
-            z_min = min(z_min, torch.min(points_3d[:, 2]))
-            z_max = max(z_max, torch.max(points_3d[:, 2]))
+            semantic_map = semantic_map_full[i*chunk_size: (i+1)*chunk_size]
+            semantic_map = semantic_map.to(rays_o.device)
+            
+            # Voting option 1: use alpha-composite weights along the ray for voting
+            if unprojected_method == 'alpha_composite_weights':
+                results = render(model, rays_o_chunk, rays_d_chunk, **render_kwargs)
+        
+                weights = results['weights']
+                xyzs = results['xyzs']
 
-    print(hparams.dataset_name, hparams.exp_name)
-    print("x_min: {}, x_max: {}".format(x_min, x_max))
-    print("y_min: {}, y_max: {}".format(y_min, y_max))
-    print("z_min: {}, z_max: {}".format(z_min, z_max))
+                n_rays, n_samples = weights.shape
 
-    # save x_min, x_max, y_min, y_max, z_min, z_max to txt file
-    with open(os.path.join('results', hparams.dataset_name, hparams.exp_name, 'range.txt'), 'w') as f:
-        f.write("================ Scene Range ==============\n")
-        f.write("x_min: {}, x_max: {}\n".format(x_min, x_max))
-        f.write("y_min: {}, y_max: {}\n".format(y_min, y_max))
-        f.write("z_min: {}, z_max: {}\n".format(z_min, z_max))
-        f.write("================ Camera Range =============\n")
-        f.write("x_min: {}, x_max: {}\n".format(camera_pos_min[0], camera_pos_max[0]))
-        f.write("y_min: {}, y_max: {}\n".format(camera_pos_min[1], camera_pos_max[1]))
-        f.write("z_min: {}, z_max: {}\n".format(camera_pos_min[2], camera_pos_max[2]))
+                # move to GPUs
+                weights = weights.to(rays_o.device)
+                xyzs = xyzs.to(rays_o.device)
+
+                weights = rearrange(weights, 'n1 n2 -> (n1 n2)')
+                xyzs = rearrange(xyzs, 'n1 n2 c -> (n1 n2) c')
+                semantic_map = repeat(semantic_map, 'n1 -> (n1 repeat)', repeat=n_samples)
+
+                assert weights.shape[0] == xyzs.shape[0] == semantic_map.shape[0]
+
+                # batchify points for the voting process
+                batch_size = 128 * 128 * 128
+                batch_n = math.ceil(weights.shape[0]/batch_size)
+                for i in range(batch_n):
+                    _xyzs = xyzs[i*batch_size: (i+1)*batch_size]
+                    _weights = weights[i*batch_size: (i+1)*batch_size]
+                    _semantic_map = semantic_map[i*batch_size: (i+1)*batch_size]
+                    mask = ((_xyzs >= xyz_min) & (_xyzs < xyz_max)).all(dim=-1)
+                    mask = mask & (_weights > 0) & (_semantic_map != 0)
+                    if mask.sum() == 0:
+                        print("no points in bounds!")
+                        continue
+                    x_idx, y_idx, z_idx = ((_xyzs[mask] - xyz_min) / (xyz_max - xyz_min) * (grid_dim-1)).long().to(rays_o.device).t()
+                    w_idx = _weights[mask]
+                    semantic_grid[x_idx, y_idx, z_idx] += w_idx
+
+            # Voting option 2: use rendered depth for voting
+            if unprojected_method == 'rendered_depth':
+                depth = depth_map_full[i*chunk_size: (i+1)*chunk_size]
+                xyzs = rays_o_chunk + rays_d_chunk * depth.unsqueeze(-1)
+                xyzs = xyzs.to(rays_o.device)
+                mask = ((xyzs >= xyz_min) & (xyzs < xyz_max)).all(dim=-1)
+                mask = mask & (depth > 0) & (semantic_map != 0)
+                if mask.sum() == 0:
+                    print("no points in bounds!")
+                    continue
+                x_idx, y_idx, z_idx = ((xyzs[mask] - xyz_min) / (xyz_max - xyz_min) * (grid_dim-1)).long().to(rays_o.device).t()
+                semantic_grid[x_idx, y_idx, z_idx] += 1
+
+    # None of the voxels are occupied by this category
+    if torch.max(semantic_grid) <= 1e-3:
+        print("No voxels are occupied by this category!")
+        return None
+
+    # Extraction option 1: use marching cubes on the semantic grid
+    if mesh_extraction_method == 'marching_cubes':
+        print("Extracting semantic meshes using marching cubes!")
+        semantic_grid = semantic_grid.cpu()
+        convert_samples_to_ply(
+            semantic_grid, 
+            output_path, 
+            bbox=bbox.cpu(), 
+            level=0.2
+        )
+
+    # Extraction option 2: load whole meshes then masking those voxels that are not occupied by the object
+    if mesh_extraction_method == 'sampled_from_whole_mesh':
+        mesh_path = os.path.join(results_dir, 'meshes.ply')
+        # TODO: load meshes -> mask vertices by semantic_grid -> save to ply
+        pass
+
+    print("Saving semantic meshes to ply file {}!".format(output_path))
+    return output_path
 
 
-   
 if __name__ == '__main__':
     hparams = get_opts()
-    extract_semantic_meshes(hparams)  # Extract semantic meshes
-    # estimate_range_of_scene(hparams)    # Estimate the min & max bounds of the scene
+    testing_extract_semantic_meshes(hparams)  # Extract semantic meshes

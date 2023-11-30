@@ -5,9 +5,9 @@ from openai import RateLimitError, APIConnectionError
 from pygments import highlight
 from pygments.lexers import PythonLexer
 from pygments.formatters import TerminalFormatter
-from utils import load_prompt, DynamicObservation, IterableDynamicObservation
+from .utils import load_prompt, DynamicObservation, IterableDynamicObservation
 import time
-from LLM_cache import DiskCache
+from .LLM_cache import DiskCache
 
 """
 This part of code is adapt from VoxPoser.
@@ -187,6 +187,17 @@ def exec_safe(code_str, gvars=None, lvars=None):
         {'exec': empty_fn, 'eval': empty_fn}
     ])
     try:
+        
+        # directly import custom functions
+        code_str = f'from opt import get_opts' + '\n' + \
+                f'from scene_representation import SceneRepresentation' + '\n' + \
+                f'from edit_utils import get_object_3d_location, get_3d_asset, put_object_in_scene' + '\n' + \
+                f'from gpt.code_gen import setup_LMP' + '\n' + \
+                f'hparams = get_opts()' + '\n' + \
+                f'scene = SceneRepresentation(hparams)' + '\n' + \
+                code_str + '\n' + \
+                f'scene.render_scene(skip_render_NeRF=True)' + '\n'
+        
         exec(code_str, custom_gvars, lvars)
     except Exception as e:
         print(f'Error executing code:\n{code_str}')

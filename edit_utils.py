@@ -4,6 +4,8 @@ import numpy as np
 import math
 import random
 from retrieval.wrapper_objaverse import retrieve_object_from_objaverse
+from tracking.demo_with_text import run_deva
+from extract_semantic_mesh import extract_semantic_meshes
 
 '''
 Wrapper of the modular functions for GPT model to call
@@ -19,7 +21,14 @@ def get_object_3d_location(scene_representation, object_name, N_SAMPLES=2000):
     else:
         # otherwise, segment image and extract mesh
         print("Extracting mesh of {} from input views......".format(object_name))
-        ##### TODO: integrate Tracking-with-DEVA & extract_semantic_mesh.py #####
+        # integrate Tracking-with-DEVA & extract_semantic_mesh.py
+        object_tracking_results_dir = os.path.join(scene_representation.tracking_results_dir, object_name)
+        os.makedirs(object_tracking_results_dir, exist_ok=True)
+        run_deva(scene_representation.dataset.imgs_dir, object_tracking_results_dir, object_name)
+        obj_mesh_path = extract_semantic_meshes(scene_representation, object_tracking_results_dir)
+        if obj_mesh_path is None:
+            raise ValueError("Mesh extraction failed for object {}.".format(object_name))
+        print("Extracted mesh of {} saved at {}.".format(object_name, obj_mesh_path))
     # load meshes
     mesh = o3d.io.read_triangle_mesh(obj_mesh_path)
     mesh.compute_vertex_normals()
@@ -42,7 +51,6 @@ def get_3d_asset(object_name):
     new_obj_info['object_name'] = object_name
     new_obj_info['object_id'] = obj_id
     new_obj_info['object_path'] = obj_path
-    # new_obj_info['object_path'] = '/home/max/Desktop/Blender_Stuff/insertion/assets/apple.glb'  # for debugging
     return new_obj_info
 
 def put_object_in_scene(scene_representation, object_info, object_locations):
@@ -52,9 +60,20 @@ def put_object_in_scene(scene_representation, object_info, object_locations):
     # simply store the location and orientation of the object in the scene representation
     object_info['pos'] = selected_positions
     object_info['rot'] = np.eye(3)
-    object_info['scale'] = 0.017
+    object_info['scale'] = 0.017  # TODO: use GPT4-V to predict the scale of the object
     scene_representation.insert_object(object_info)
 
 def change_object_texture(obj, texture_name):
     print("Texturing object {} into {}".format(obj, texture_name))
     return obj
+
+if __name__ == '__main__':
+    from scene_representation import SceneRepresentation
+    from opt import get_opts
+    hparams = get_opts()
+    scene_representation = SceneRepresentation(hparams)
+    loc = get_object_3d_location(scene_representation, 'sand')
+    obj = get_3d_asset('apple')
+    put_object_in_scene(scene_representation, obj, loc)
+    # render result
+    scene_representation.render_scene(skip_render_NeRF=True)

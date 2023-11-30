@@ -1,7 +1,7 @@
 # Use GPT-4 API to generate code for a given prompt
 import os
 import openai
-from LMP import LMP
+from .LMP import LMP
 
 openai.organization = "org-3RBckaRMgqYfrez6l1XnkmWi"
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     edit_instruction = "Place an apple on the grass"
     lmps = setup_LMP()
     edit_lmp = lmps['plan_ui']
-    generate_LMP(edit_lmp, edit_instruction)
+    # generate_LMP(edit_lmp, edit_instruction)
 
     # # output the response as txt file
     # with open('prompts/edit_responses.txt', 'w') as file:
