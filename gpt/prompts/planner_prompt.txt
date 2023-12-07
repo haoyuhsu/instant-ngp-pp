@@ -26,3 +26,9 @@ put_object_in_scene(scene, banana, ground_loc)
 bench_loc = get_object_3d_location(scene, 'bench')
 keyboard = get_3d_asset('keyboard')
 put_object_in_scene(scene, keyboard, bench_loc)
+
+# Query: Make 10 eggs filled inside the bowl.
+bowl_loc = get_object_3d_location(scene, 'bowl')
+egg = get_3d_asset('egg')
+for i in range(10):
+    put_object_in_scene(scene, egg, bowl_loc)

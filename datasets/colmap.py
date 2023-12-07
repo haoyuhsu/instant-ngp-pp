@@ -17,6 +17,12 @@ scene_up_vector_dict = {
     'garden': [-0.03292375, -0.8741887, -0.48446894],
 }
 
+scene_scale_dict = {
+    'bonsai': 0.58,
+    'counter': 1.0,
+    'garden': 2.25,
+}
+
 def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
@@ -187,6 +193,8 @@ class ColmapDataset(BaseDataset):
             self.render_traj_rays = self.get_path_rays(all_render_c2w)
 
         self.imgs = img_path_list
+
+        self.scene_scale = scene_scale_dict[scene_name]
 
     def read_rgb(self, img_path_list):
         """

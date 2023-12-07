@@ -23,6 +23,17 @@ scene_up_vector_dict = {
     'waldo_kitchen': [0.0, 0.0, 1.0],
 }
 
+scene_scale_dict = {
+    'donuts': 1.0,
+    'dozer_nerfgun_waldo': 1.5,
+    'espresso': 4.0,
+    'figurines': 1.5,
+    'ramen': 0.7,
+    'shoe_rack': 1.2,
+    'teatime': 1.6,
+    'waldo_kitchen': 3.2,
+}
+
 def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
@@ -152,6 +163,8 @@ class LeRFDataset(BaseDataset):
             self.render_traj_rays = self.get_path_rays(all_render_c2w)
 
         self.imgs = img_path_list
+
+        self.scene_scale = scene_scale_dict[scene_name]
     
     def read_rgb(self, img_path_list):
         """

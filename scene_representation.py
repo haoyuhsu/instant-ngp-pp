@@ -35,6 +35,7 @@ class SceneRepresentation():
         os.makedirs(self.semantic_mesh_dir, exist_ok=True)
 
         self.up_vector = self.dataset.up_vector
+        self.scene_scale = self.dataset.scene_scale
 
         self.inserted_objects = []
         self.blender_cfg = {}
@@ -49,7 +50,7 @@ class SceneRepresentation():
         rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
         model = NGP(
             scale=hparams.scale, 
-            rgb_act=rgb_act, 
+            rgb_act=rgb_act,
             use_skybox=hparams.use_skybox, 
             embed_a=hparams.embed_a, 
             embed_a_len=hparams.embed_a_len,

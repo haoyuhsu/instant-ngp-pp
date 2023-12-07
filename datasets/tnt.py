@@ -15,6 +15,10 @@ scene_up_vector_dict = {
     'Playground': [-0.00720354, -0.9963133, -0.08548705],
 }
 
+scene_scale_dict = {
+    'Playground': 8.0,
+}
+
 def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
@@ -126,6 +130,7 @@ class tntDataset(BaseDataset):
 
         self.imgs = img_path_list
 
+        self.scene_scale = scene_scale_dict[scene_name]
 
     def read_rgb(self, img_path_list):
         """

@@ -6,6 +6,9 @@ import random
 from retrieval.wrapper_objaverse import retrieve_object_from_objaverse
 from tracking.demo_with_text import run_deva
 from extract_semantic_mesh import extract_semantic_meshes
+import glob
+from PIL import Image
+from gpt.estimate_scale import estimate_object_scale
 
 '''
 Wrapper of the modular functions for GPT model to call
@@ -45,23 +48,39 @@ def get_3d_asset(object_name):
         ##### TODO: use Fantasia3D or project from Adobe to generate object #####
     else:
         print("Retrieved object {} from objaverse.".format(object_name))
-    obj_id = list(obj_info.keys())[0]   # get the id of the obj file
-    obj_path = obj_info[obj_id]         # get the path of the obj file
-    new_obj_info = {}
-    new_obj_info['object_name'] = object_name
-    new_obj_info['object_id'] = obj_id
-    new_obj_info['object_path'] = obj_path
-    return new_obj_info
+
+    print("Rendering object {}......".format(obj_info['object_path']))
+
+    # Render the object in Blender
+    os.system('{} --background --python ./blender/asset_rendering.py -- --object_file={} --output_dir={}'.format( \
+        '/snap/bin/blender', \
+        obj_info['object_path'], \
+        './blender/images'
+    ))
+
+    img_path_list = sorted(glob.glob(os.path.join('./blender/images/', obj_info['object_id'], '*.png')))
+    img_path = np.random.choice(img_path_list)
+
+    # Estimate the scale of the object by GPT4 API
+    object_scale = estimate_object_scale(img_path, obj_info['object_name'])  # use both rendered image and object name
+    # object_scale = estimate_object_scale(None, obj_info['object_name'])        # use only object name
+    # object_scale = estimate_object_scale(img_path, None)                  # use only rendered image
+    obj_info['object_scale'] = object_scale
+    print("Estimated scale of {} is {} meters.".format(obj_info['object_name'], object_scale))
+
+    return obj_info
 
 def put_object_in_scene(scene_representation, object_info, object_locations):
     print("Inserting object: {}".format(object_info['object_name']))
     assert isinstance(object_info, dict)
     selected_positions = object_locations[random.randint(0, len(object_locations)-1)]
     # simply store the location and orientation of the object in the scene representation
-    object_info['pos'] = selected_positions
-    object_info['rot'] = np.eye(3)
-    object_info['scale'] = 0.017  # TODO: use GPT4-V to predict the scale of the object
-    scene_representation.insert_object(object_info)
+    new_object_info = object_info.copy()
+    new_object_info['pos'] = selected_positions
+    new_object_info['rot'] = np.eye(3)
+    new_object_info['scale'] = object_info['object_scale'] / scene_representation.scene_scale
+    scene_representation.insert_object(new_object_info)
+    print("Inserted object {} into scene at {}.".format(new_object_info['object_name'], selected_positions))
 
 def change_object_texture(obj, texture_name):
     print("Texturing object {} into {}".format(obj, texture_name))

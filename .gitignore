@@ -7,6 +7,8 @@ lightning_logs/
 cache/
 gpt/cache/
 tracking/saves/
+blender/assets/
+blender/images/
 
 __pycache__/
 *.py[cod]

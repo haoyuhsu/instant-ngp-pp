@@ -11,6 +11,39 @@ from mathutils import Vector, Matrix
 import argparse
 import glob
 
+
+context = bpy.context
+scene = context.scene
+render = scene.render
+
+object_dict = dict()  # object path -> object_name
+
+# TODO: handle the case when there are multiple objects in the scene
+# existing_objects = set(scene.objects)
+# all_objects = set(scene.objects)
+# new_objects = all_objects - existing_objects
+
+
+# Function to ensure collection is visible and renderable
+def ensure_collection_visibility(collection_name):
+    if collection_name in bpy.data.collections:
+        collection = bpy.data.collections[collection_name]
+        collection.hide_viewport = False  # Ensure collection is visible in the viewport
+        collection.hide_render = False    # Ensure collection is enabled for rendering
+    else:
+        print(f"Collection '{collection_name}' not found.")
+
+ensure_collection_visibility("Collection") # Ensure default collection is visible and renderable
+
+
+def enable_render_for_all_objects():
+    for obj in bpy.data.objects:
+        obj.hide_viewport = False # Ensure the object is visible in the viewport
+        obj.hide_render = False  # Ensure the object is visible in the render
+
+enable_render_for_all_objects() # Ensure all objects are visible in the render
+
+
 # Stackoverflow: https://blender.stackexchange.com/questions/6817/how-to-pass-command-line-arguments-to-a-blender-python-script
 class ArgumentParserForBlender(argparse.ArgumentParser):
     """
@@ -51,6 +84,7 @@ class ArgumentParserForBlender(argparse.ArgumentParser):
         """
         return super().parse_args(args=self._get_argv_after_doubledash())
 
+
 # get rotation matrix from aligning one vector to another vector
 # link: https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
 def get_rot_mat(v1, v2):
@@ -80,7 +114,8 @@ def get_rot_mat(v1, v2):
     R = np.eye(3) + vx + vx @ vx * (1 - c) / (s ** 2)
     return R 
 
-def apply_rot_mat_to_obj(obj, R):
+
+def rotate_obj(obj, R):
     """
     Apply rotation matrix to blender object
 
@@ -92,10 +127,145 @@ def apply_rot_mat_to_obj(obj, R):
     obj.rotation_mode = 'QUATERNION'
     obj.rotation_quaternion = R.to_quaternion()
 
-def sort_key(x):
-    if len(x) > 2 and x[-10] == "_":
-        return x[-9:]
-    return x
+
+def reset_scene() -> None:
+    """Resets the scene to a clean state."""
+    # delete everything that isn't part of a camera or a light
+    for obj in bpy.data.objects:
+        # if obj.type not in {"CAMERA", "LIGHT"}:
+        #     bpy.data.objects.remove(obj, do_unlink=True)
+        bpy.data.objects.remove(obj, do_unlink=True)
+    # delete all the materials
+    for material in bpy.data.materials:
+        bpy.data.materials.remove(material, do_unlink=True)
+    # delete all the textures
+    for texture in bpy.data.textures:
+        bpy.data.textures.remove(texture, do_unlink=True)
+    # delete all the images
+    for image in bpy.data.images:
+        bpy.data.images.remove(image, do_unlink=True)
+
+
+def scene_bbox(single_obj=None, ignore_matrix=False):
+    bbox_min = (math.inf,) * 3
+    bbox_max = (-math.inf,) * 3
+    found = False
+    for obj in scene_meshes() if single_obj is None else object_meshes(single_obj):
+        found = True
+        for coord in obj.bound_box:
+            coord = Vector(coord)
+            if not ignore_matrix:
+                coord = obj.matrix_world @ coord
+            bbox_min = tuple(min(x, y) for x, y in zip(bbox_min, coord))
+            bbox_max = tuple(max(x, y) for x, y in zip(bbox_max, coord))
+    if not found:
+        raise RuntimeError("no objects in scene to compute bounding box for")
+    return Vector(bbox_min), Vector(bbox_max)
+
+
+def object_meshes(single_obj):
+    for obj in [single_obj] + single_obj.children_recursive:
+        if isinstance(obj.data, (bpy.types.Mesh)):
+            yield obj
+
+
+def scene_meshes():
+    for obj in bpy.context.scene.objects.values():
+        if isinstance(obj.data, (bpy.types.Mesh)):
+            yield obj
+
+
+def scene_root_objects():
+    for obj in bpy.context.scene.objects.values():
+        if not obj.parent:
+            yield obj
+
+
+def normalize_scene(single_obj=None):
+    bbox_min, bbox_max = scene_bbox(single_obj)
+    scale = 1 / max(bbox_max - bbox_min)
+    # for obj in scene_root_objects():
+    #     obj.scale = obj.scale * scale
+    single_obj.scale = single_obj.scale * scale
+    # Apply scale to matrix_world.
+    bpy.context.view_layer.update()
+    bbox_min, bbox_max = scene_bbox(single_obj)
+    offset = -(bbox_min + bbox_max) / 2
+    # for obj in scene_root_objects():
+    #     obj.matrix_world.translation += offset
+    single_obj.matrix_world.translation += offset
+    bpy.ops.object.select_all(action="DESELECT")
+
+
+def duplicate_hierarchy(obj, parent=None):
+    """Recursively duplicate an object and all its children."""
+    # Duplicate the object (without the data)
+    new_obj = obj.copy()
+    # Link the object data if it exists (for meshes, curves, etc.)
+    if new_obj.data:
+        new_obj.data = obj.data.copy()
+    # If a parent is specified, set the duplicated object's parent
+    if parent:
+        new_obj.parent = parent
+    # Link the new object to the collection
+    bpy.context.collection.objects.link(new_obj)
+    # Recursively duplicate children
+    for child in obj.children:
+        duplicate_hierarchy(child, new_obj)
+    return new_obj
+
+
+def create_linked_duplicate(object_name: str) -> None:
+    """Creates n linked duplicate of the given object."""
+    original_obj = bpy.data.objects.get(object_name)
+    if original_obj:
+        new_obj = duplicate_hierarchy(original_obj)
+    else:
+        new_obj = None
+        print(f"Object '{object_name}' not found.")
+    return new_obj
+
+
+def load_object(object_path: str) -> bpy.types.Object:
+    """Loads a glb model into the scene."""
+    # check if the same object has been loaded before
+    if object_path in object_dict:
+        print("Object {} already loaded.".format(object_path))
+        new_obj = create_linked_duplicate(object_dict[object_path])
+        return new_obj
+    # import the object
+    if object_path.endswith(".glb"):
+        bpy.ops.import_scene.gltf(filepath=object_path, merge_vertices=True)
+    elif object_path.endswith(".fbx"):
+        bpy.ops.import_scene.fbx(filepath=object_path)
+    elif object_path.endswith(".ply"):
+        bpy.ops.import_mesh.ply(filepath=object_path)
+    else:
+        raise ValueError(f"Unsupported file type: {object_path}")
+    # Find the most recently added object
+    new_obj = bpy.context.object
+    object_name = new_obj.name
+    # Store the object name in the dictionary
+    object_dict[object_path] = object_name
+    return new_obj
+
+
+def setup_camera():
+    # Find a camera in the scene
+    cam = None
+    for obj in bpy.data.objects:
+        if obj.type == 'CAMERA':
+            cam = obj
+            print("found camera")
+            break
+    # If no camera is found, create a new one
+    if cam is None:
+        bpy.ops.object.camera_add()
+        cam = bpy.context.object
+    # Set the camera as the active camera for the scene
+    bpy.context.scene.camera = cam
+    return cam
+
 
 class Camera():
     def __init__(self, im_height, im_width, out_dir):
@@ -103,12 +273,7 @@ class Camera():
         self.out_dir = out_dir
         self.w = im_width
         self.h = im_height
-        bpy.data.scenes['Scene'].render.resolution_x = self.w
-        bpy.data.scenes['Scene'].render.resolution_y = self.h
-        bpy.ops.object.camera_add()
-        cam = bpy.context.object
-        bpy.context.scene.camera = cam
-        self.camera = cam
+        self.camera = setup_camera()
         
     def set_camera(self, K, c2w):
         self.K = K       # (3, 3)
@@ -192,90 +357,102 @@ class Camera():
             bpy.data.scenes["Scene"].node_tree.nodes["File Output"].base_path = os.path.join(dir_path, '{:0>3d}'.format(i))
             bpy.ops.render.render(use_viewport=True, write_still=True)
 
-def setup_blender_env():
 
-    # delete everything within the scene
-    for obj in bpy.context.scene.objects:
-        obj.select_set(True)
-        # bpy.context.view_layer.objects.active = obj
-        bpy.ops.object.delete()
+def setup_blender_env(img_width, img_height, env_map_path):
 
-    # maybe default setting is 'RGBA'
-    bpy.context.scene.render.image_settings.color_mode = 'RGBA'
+    reset_scene()
 
-    # use blender cycles
-    bpy.context.scene.render.engine = 'CYCLES'
-    bpy.context.scene.cycles.samples = 64  # 64 for testing, 256 or higher for final
-    bpy.context.scene.cycles.device = 'GPU'
-    bpy.context.scene.render.image_settings.file_format = 'PNG'
-    bpy.context.scene.render.film_transparent = True
-    bpy.data.scenes["Scene"].cycles.film_exposure = 2.0
+    # Set render engine and parameters
+    render.engine = 'CYCLES'
+    render.image_settings.file_format = "PNG"
+    render.image_settings.color_mode = "RGBA"
+    render.resolution_x = img_width
+    render.resolution_y = img_height
+    render.resolution_percentage = 100
+
+    scene.cycles.device = "GPU"
+    scene.cycles.samples = 32  # 32 for testing, 256 or higher for final
+    scene.cycles.use_denoising = True
+    scene.render.film_transparent = True
+    scene.cycles.film_exposure = 2.0
 
     # Set the device_type (from Zhihao's code, not sure why specify this)
-    bpy.context.preferences.addons[
+    preferences = context.preferences
+    preferences.addons[
         "cycles"
     ].preferences.compute_device_type = "CUDA" # or "OPENCL"
 
-    # Set the device and feature set
-    bpy.context.scene.cycles.device = "GPU"
-
     # get_devices() to let Blender detects GPU device
-    bpy.context.preferences.addons["cycles"].preferences.get_devices()
-    print(bpy.context.preferences.addons["cycles"].preferences.compute_device_type)
-    for d in bpy.context.preferences.addons["cycles"].preferences.devices:
+    preferences.addons["cycles"].preferences.get_devices()
+    print(preferences.addons["cycles"].preferences.compute_device_type)
+    for d in preferences.addons["cycles"].preferences.devices:
         d["use"] = 1 # Using all devices, include GPU and CPU
         print(d["name"], d["use"])
 
+    add_env_lighting(env_map_path, 1.0)
+    add_sun_lighting()
+
     # TODO: figure out why AttributeError: 'WorldLighting' object has no attribute 'use_ambient_occlusion'
-    # bpy.context.scene.world.light_settings.use_ambient_occlusion = True  # turn AO on
-    # bpy.context.scene.world.light_settings.ao_factor = 0.2  # set it to 0.5
+    # scene.world.light_settings.use_ambient_occlusion = True  # turn AO on
+    # scene.world.light_settings.ao_factor = 0.2  # set it to 0.5
 
-    # nodes
-    # bpy.context.scene.view_layers["ViewLayer"].use_pass_normal = True
-    # bpy.context.view_layer.cycles.use_denoising = True
-    # bpy.context.view_layer.cycles.denoising_store_passes = True
-    # bpy.context.scene.use_nodes = True
-    # tree = bpy.context.scene.node_tree
-    # nodes = tree.nodes
 
-    # create render layers
-    # node_rl = nodes['Render Layers']
-    # node_out_img = nodes.new('CompositorNodeOutputFile')
-    # node_out_img.base_path = output_folder
-    # node_out_img.format.file_format = 'PNG'
-    # node_out_img.format.compression = 100
-    # tree.links.new(node_rl.outputs['Image'], node_out_img.inputs['Image'])
-
-def add_env_lighting(env_map_path):
+def add_env_lighting(env_map_path: str, strength: float = 1.0):
     """
-    Add environment lighting to the scene
+    Add environment lighting to the scene with controllable strength.
 
     Args:
-        env_map_path: path to the environment map
+        env_map_path (str): Path to the environment map.
+        strength (float): Strength of the environment map.
     """
+    # Ensure that we are using nodes for the world's material
     world = bpy.context.scene.world
+    world.use_nodes = True
     nodes = world.node_tree.nodes
     nodes.clear()
+
+    # Create an environment texture node and load the image
     env = nodes.new('ShaderNodeTexEnvironment')
     env.image = bpy.data.images.load(env_map_path)
+
+    # Create a Background node and set its strength
+    background = nodes.new('ShaderNodeBackground')
+    background.inputs['Strength'].default_value = strength
+
+    # Create an Output node
     out = nodes.new('ShaderNodeOutputWorld')
-    world.node_tree.links.new(env.outputs['Color'], out.inputs['Surface'])
 
-def get_alignment_rot(v1, v2):
-    """
-    Get rotation matrix to align v1 to v2
+    # Link nodes together
+    links = world.node_tree.links
+    links.new(env.outputs['Color'], background.inputs['Color'])
+    links.new(background.outputs['Background'], out.inputs['Surface'])
 
-    Args:
-        v1: (3,) asset up vector (default)
-        v2: (3,) world scene up vector
 
-    Returns:
-        R: (3, 3) rotation matrix
-    """
-    R = get_rot_mat(v1, v2)
-    return R
+# This is used for auxiliary lighting (for debugging)
+def add_sun_lighting() -> None:
+    # Check and delete any existing light object
+    for obj in bpy.data.objects:
+        if obj.type == 'LIGHT':
+            obj.select_set(True)
+            bpy.ops.object.delete()
+    # add a new light
+    bpy.ops.object.light_add(type="SUN")
+    light2 = bpy.data.lights["Sun"]
+    light2.energy = 3
+    bpy.data.objects["Sun"].location[2] = 2.0
+    bpy.data.objects["Sun"].scale[0] = 100
+    bpy.data.objects["Sun"].scale[1] = 100
+    bpy.data.objects["Sun"].scale[2] = 100
+
 
 def create_camera_list(c2w, K):
+    """
+    Create a list of camera parameters
+
+    Args:
+        c2w: (N, 4, 4) camera to world transform
+        K: (3, 3) or (N, 3, 3) camera intrinsic matrix
+    """
     cam_list = []
     for i in range(len(c2w)):
         pose = c2w[i].reshape(-1, 4)
@@ -285,39 +462,24 @@ def create_camera_list(c2w, K):
             cam_list.append({'c2w': pose, 'K': K})
     return cam_list
 
-def transform_object_origin(obj, use_verts=True):
+
+def transform_object_origin(obj):
     """
     Transform object to align with the scene, make the bottom point of the object to be the origin
 
     Args:
-        obj: blender object
-        use_verts: whether to use vertices or bounding box to calculate the bottom point
+        obj: blender objectå
     """
-    all_object_nodes = [obj] + obj.children_recursive
-    # get the bottom point of all components in an asset
-    vert_list = []
-    for obj_node in all_object_nodes:
-        if obj_node.data:
-            me = obj_node.data
-            matrix = obj_node.matrix_world
-            if use_verts:
-                data = (v.co for v in me.vertices)
-            else:
-                data = (Vector(v) for v in obj_node.bound_box)
-            coords = np.array([matrix @ v for v in data])
-            vert_list.append(coords)
-
-    all_vertices = np.concatenate(vert_list, axis=0)
-    x = all_vertices.T[0]
-    y = all_vertices.T[1]
-    z = all_vertices.T[2]
+    bbox_min, bbox_max = scene_bbox(obj)
 
     new_origin = np.zeros(3)
-    new_origin[0] = (x.max() + x.min()) / 2.
-    new_origin[1] = (y.max() + y.min()) / 2.
-    new_origin[2] = z.min()
+    new_origin[0] = (bbox_max[0] + bbox_min[0]) / 2.
+    new_origin[1] = (bbox_max[1] + bbox_min[1]) / 2.
+    new_origin[2] = bbox_min[2]
 
-    # move the asset origin to the bottom point
+    all_object_nodes = [obj] + obj.children_recursive
+
+    ## move the asset origin to the bottom point
     for obj_node in all_object_nodes:
         if obj_node.data:
             me = obj_node.data
@@ -328,13 +490,13 @@ def transform_object_origin(obj, use_verts=True):
             me.transform(Matrix.Translation(-o))
             mw.translation = mw @ o
 
-    # move all transform to origin
+    ## move all transform to origin
     for obj_node in all_object_nodes:
         obj_node.matrix_world.translation = [0, 0, 0]
         obj_node.rotation_quaternion = [1, 0, 0, 0]
 
 
-def insert_object(obj_path, pos, rot, scale=0.03):
+def insert_object(obj_path, pos, rot, scale=1.0):
     """
     Insert object into the scene
 
@@ -347,15 +509,19 @@ def insert_object(obj_path, pos, rot, scale=0.03):
     Returns:
         inserted_obj: blender object
     """
-    bpy.ops.import_scene.gltf(filepath=obj_path)
-    inserted_obj = bpy.context.object
-    transform_object_origin(inserted_obj, use_verts=True)
+    inserted_obj = load_object(obj_path)
+    # inserted_obj = bpy.context.object  # get the last inserted object (if single object)
+    normalize_scene(inserted_obj)
+    transform_object_origin(inserted_obj)
     inserted_obj.location = pos
-    inserted_obj.scale = scale * np.array([1, 1, 1])
-    apply_rot_mat_to_obj(inserted_obj, rot)
+    inserted_obj.scale *= scale
+    # bpy.ops.object.transform_apply(scale=True)
+    rotate_obj(inserted_obj, rot)
+    # bpy.context.view_layer.update()                 # Update the scene
     return inserted_obj
 
-def add_shadow_catcher(pos, rot, scale=0.03, option='plane', results_dir=None):
+
+def add_shadow_catcher(pos, rot, scale=1.0, option='plane', results_dir=None):
     """
     Add shadow catcher to the scene
 
@@ -371,22 +537,22 @@ def add_shadow_catcher(pos, rot, scale=0.03, option='plane', results_dir=None):
         bpy.ops.mesh.primitive_plane_add()
         plane = bpy.context.object
         plane.location = pos
-        plane.scale = scale * 0.5 * np.array([1, 1, 1])
-        apply_rot_mat_to_obj(plane, rot)
+        plane.scale *= scale * 2.0   # 2.0 to make the plane size larger
+        rotate_obj(plane, rot)
         plane.is_shadow_catcher = True
         plane.visible_glossy = False
         plane.visible_diffuse = False
     elif option == 'mesh':
         # add meshes extracted from NeRF as shadow catcher
-        meshes_folder = os.path.join(results_dir, 'semantic_mesh_deva')
-        meshes_filenames = [filename for filename in sorted(os.listdir(meshes_folder)) if filename.endswith('.ply')]
-        for mesh_file in meshes_filenames:
-            mesh_path = os.path.join(meshes_folder, mesh_file)
-            bpy.ops.import_mesh.ply(filepath=mesh_path)
-            mesh = bpy.context.object
-            mesh.is_shadow_catcher = True
-            mesh.visible_glossy = False
-            mesh.visible_diffuse = False
+        mesh_path = os.path.join(results_dir, 'meshes.ply')
+        if not os.path.exists(mesh_path):
+            AssertionError('meshes.ply does not exist')
+        bpy.ops.import_mesh.ply(filepath=mesh_path)
+        mesh = bpy.context.object
+        mesh.is_shadow_catcher = True
+        mesh.visible_glossy = False
+        mesh.visible_diffuse = False
+
 
 def run_blender_render(config_path):
     with open(config_path, 'r') as f:
@@ -402,9 +568,11 @@ def run_blender_render(config_path):
     output_dir = os.path.join(results_dir, 'blend_results')
     os.makedirs(output_dir, exist_ok=True)
 
-    setup_blender_env()
-    add_env_lighting(env_map_path)
-    # align_R = get_alignment_rot(np.array([0, 0, 1]), scene_up_vector)
+    setup_blender_env(w, h, env_map_path)
+    # align_R = get_alignment_rot(np.array([0, 0, 1]), scene_up_vector)  # No need to align since current camera poses are already aligned
+
+    cam = Camera(h, w, output_dir)
+    cam_list = create_camera_list(c2w, K)
 
     # insert objects
     for obj_info in insert_object_info:
@@ -415,8 +583,19 @@ def run_blender_render(config_path):
         scale = obj_info['scale']
         _ = insert_object(obj_path, pos, rot, scale)
 
-    cam = Camera(h, w, output_dir)
-    cam_list = create_camera_list(c2w, K)
+    bpy.context.view_layer.update()     # Update the scene
+
+
+    # Before rendering, check the renderability of each object in the scene
+    # for obj in scene_root_objects():
+    #     if not obj.hide_render and not obj.hide_viewport:
+    #         print("Object {} is renderable and visible.".format(obj.name))
+    #     else:
+    #         print("Object {} is not renderable and visible.".format(obj.name))
+
+    # ensure_collection_visibility("Collection") # Ensure default collection is visible and renderable
+    # enable_render_for_all_objects() # Ensure all objects are visible in the render
+
 
     # render rgb and depth without a shadow catcher
     cam.render_path_rgb(cam_list, dir_name='rgb')
@@ -431,12 +610,20 @@ def run_blender_render(config_path):
         add_shadow_catcher(pos, rot, scale, option='plane')
         # add_shadow_catcher(pos, rot, scale, option='mesh', results_dir=results_dir)
 
+    bpy.context.view_layer.update()     # Update the scene
+
     # render rgb and depth with a shadow catcher
     cam.render_path_rgb(cam_list, dir_name='rgb_shadow')
     cam.render_path_depth(cam_list, dir_name='depth_shadow')
 
+# set directory
+#os.chdir('/home/max/Desktop/instant-ngp-pp/')
+
+#run_blender_render('/home/max/Desktop/instant-ngp-pp/results/tnt/playground/blender_cfg.json')
+
 def run_blender_render_terminal(blender_exec_path, config_path):
     os.system('export blender={} --background --python vc_rendering.py -- --input_config_path {}'.format(blender_exec_path, config_path))
+
 
 if __name__ == "__main__":
     parser = ArgumentParserForBlender()
