@@ -19,11 +19,13 @@ from kornia import create_meshgrid
 from utils import guided_filter
 import math
 
+
 """
 x axis: v_right
 y axis: v_forward
 z axis: v_up
 """
+
 
 def sample_panorama(
     directions, 
@@ -67,10 +69,11 @@ def sample_panorama(
     samples = samples.permute(0, 2, 3, 1)[0, 0] #(n, c)
     return samples
 
+
 def render_panorama(
     hparams: dict,
     model: torch.nn.Module,
-    output_dir: str,
+    output_dir_name: str,
     embedding_a: torch.Tensor = None,
     origin: torch.Tensor = None,
 ):
@@ -80,7 +83,7 @@ def render_panorama(
     hparams.v_right = np.array([1, 0, 0])
     hparams.v_forward = np.array([0, 1, 0])
     hparams.v_down = np.array([0, 0, -1])
-    hparams.pano_radius = 0.5
+    hparams.pano_radius = 0.01
 
     H, W = hparams.pano_hw
     cx = W/2
@@ -89,6 +92,8 @@ def render_panorama(
     device = 'cuda'
     if origin is None:
         origin = torch.zeros(3).to(device)
+    else:
+        origin = origin.to(device)
 
     right = torch.FloatTensor(hparams.v_right).to(device)
     forward = torch.FloatTensor(hparams.v_forward).to(device)
@@ -111,7 +116,7 @@ def render_panorama(
                     'render_depth': hparams.render_depth,
                     'img_wh': (W, H)}
     if hparams.embed_a:
-            render_kwargs['embedding_a'] = embedding_a
+        render_kwargs['embedding_a'] = embedding_a
     
     assert rays_o.shape[0] == rays_d.shape[0]
 
@@ -131,24 +136,26 @@ def render_panorama(
 
     # results = render(model, rays_o, rays_d, **render_kwargs)
 
-    os.makedirs(os.path.join(output_dir, 'panaroma'), exist_ok=True)
+    BASE_RESULT_DIR = f'results/{hparams.dataset_name}/{hparams.exp_name}/panorama'
+    OUTPUT_DIR = os.path.join(BASE_RESULT_DIR, output_dir_name)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     
     rgb = rearrange(rgb, '(h w) c -> h w c', h=H)
     # rgb = rearrange(results['rgb'].cpu().numpy(), '(h w) c -> h w c', h=H)
     rgb = (rgb*255).astype(np.uint8)
-    imageio.imsave(os.path.join(output_dir, 'panaroma/rgb.png'), rgb)
+    imageio.imsave(os.path.join(OUTPUT_DIR, 'rgb.png'), rgb)
 
     opacity = rearrange(opacity, '(h w) -> h w', h=H)
     opacity = (opacity*255).astype(np.uint8)
     # opacity = rearrange(results['opacity'], '(h w) -> h w', h=H)
     # opacity = guided_filter(opacity, opacity, r=10, eps=0.5)
     # opacity = (opacity*255).cpu().numpy().astype(np.uint8)
-    imageio.imsave(os.path.join(output_dir, 'panaroma/opacity.png'), opacity)
+    imageio.imsave(os.path.join(OUTPUT_DIR, 'opacity.png'), opacity)
 
     inpaint = opacity < 0.5
     mask = np.zeros_like(opacity)
     mask[inpaint] = 255
-    imageio.imsave(os.path.join(output_dir, 'panaroma/mask.png'), mask)
+    imageio.imsave(os.path.join(OUTPUT_DIR, 'mask.png'), mask)
 
     # validate sample_panorama
     # rgb = torch.FloatTensor(rgb).to(device) / 255
@@ -158,9 +165,15 @@ def render_panorama(
     # samples = (samples * 255).cpu().numpy().astype(np.uint8)
     # imageio.imsave(os.path.join(dir_out, 'samples.png'), samples)
 
+    return OUTPUT_DIR
+
+
 def test_render_panorama(hparams):
-    dir_out = os.path.join(f'results/{hparams.dataset_name}/{hparams.exp_name}')
-    os.makedirs(dir_out, exist_ok=True)
+    
+    BASE_RESULT_DIR = f'results/{hparams.dataset_name}/{hparams.exp_name}/panorama'
+    OUTPUT_DIR = os.path.join(BASE_RESULT_DIR, 'testing')
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
     rgb_act = 'None' if hparams.use_exposure else 'Sigmoid'
     model = NGP(scale=hparams.scale, rgb_act=rgb_act, use_skybox=hparams.use_skybox, embed_a=hparams.embed_a, embed_a_len=hparams.embed_a_len).cuda()
     if hparams.ckpt_load:
@@ -176,14 +189,14 @@ def test_render_panorama(hparams):
     elif os.path.exists(os.path.join(hparams.root_dir, 'rgb')):
         img_dir_name = 'rgb'
 
-    if hparams.dataset_name=='tnt':
-        N_imgs = len(os.listdir(os.path.join(hparams.root_dir, img_dir_name)))
-        embed_a_length = hparams.embed_a_len
-        if hparams.embed_a:
-            embedding_a = torch.nn.Embedding(N_imgs, embed_a_length).cuda() 
-            load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
-                prefixes_to_ignore=["center", "xyz_min", "xyz_max", "half_size", "density_bitfield", "xyz_encoder.params", "dir_encoder.params", "rgb_net.params", "skybox_dir_encoder.params", "skybox_rgb_net.params", "normal_net.params"])
-            embedding_a = embedding_a(torch.tensor([0]).cuda())
+    # if hparams.dataset_name=='tnt':
+    N_imgs = len(os.listdir(os.path.join(hparams.root_dir, img_dir_name)))
+    embed_a_length = hparams.embed_a_len
+    if hparams.embed_a:
+        embedding_a = torch.nn.Embedding(N_imgs, embed_a_length).cuda() 
+        load_ckpt(embedding_a, ckpt_path, model_name='embedding_a', \
+            prefixes_to_ignore=["center", "xyz_min", "xyz_max", "half_size", "density_bitfield", "xyz_encoder.params", "dir_encoder.params", "rgb_net.params", "skybox_dir_encoder.params", "skybox_rgb_net.params", "normal_net.params"])
+        embedding_a = embedding_a(torch.tensor([0]).cuda())
 
     # the 3 following vectors depend on dataset
     # hparams.pano_hw = (512, 1024)
@@ -191,14 +204,16 @@ def test_render_panorama(hparams):
     hparams.v_right = np.array([1, 0, 0])
     hparams.v_forward = np.array([0, 1, 0])
     hparams.v_down = np.array([0, 0, -1])
-    hparams.pano_radius = 0.5
+    hparams.pano_radius = 0.01
 
     H, W = hparams.pano_hw
     cx = W/2
     cy = H/2
 
     device = 'cuda'
-    origin = torch.zeros(3).to(device)
+    # origin = torch.zeros(3).to(device)
+    # origin = torch.FloatTensor([-0.5, 0., -0.15]).to(device)
+    origin = torch.FloatTensor([-0.5, 0.038, -0.16]).to(device)
 
     right = torch.FloatTensor(hparams.v_right).to(device)
     forward = torch.FloatTensor(hparams.v_forward).to(device)
@@ -221,7 +236,7 @@ def test_render_panorama(hparams):
                     'render_depth': hparams.render_depth,
                     'img_wh': (W, H)}
     if hparams.embed_a:
-            render_kwargs['embedding_a'] = embedding_a
+        render_kwargs['embedding_a'] = embedding_a
     
     assert rays_o.shape[0] == rays_d.shape[0]
 
@@ -244,25 +259,19 @@ def test_render_panorama(hparams):
     rgb = rearrange(rgb, '(h w) c -> h w c', h=H)
     # rgb = rearrange(results['rgb'].cpu().numpy(), '(h w) c -> h w c', h=H)
     rgb = (rgb*255).astype(np.uint8)
-    dir_rgb = os.path.join(dir_out, 'panorama/rgb')
-    os.makedirs(dir_rgb, exist_ok=True)
-    imageio.imsave(os.path.join(dir_rgb, '0.png'), rgb)
+    imageio.imsave(os.path.join(OUTPUT_DIR, 'rgb.png'), rgb)
 
     opacity = rearrange(opacity, '(h w) -> h w', h=H)
     opacity = (opacity*255).astype(np.uint8)
     # opacity = rearrange(results['opacity'], '(h w) -> h w', h=H)
     # opacity = guided_filter(opacity, opacity, r=10, eps=0.5)
     # opacity = (opacity*255).cpu().numpy().astype(np.uint8)
-    dir_opacity = os.path.join(dir_out, 'panorama/opacity')
-    os.makedirs(dir_opacity, exist_ok=True)
-    imageio.imsave(os.path.join(dir_opacity, '0.png'), opacity)
+    imageio.imsave(os.path.join(OUTPUT_DIR, 'opacity.png'), opacity)
 
     inpaint = opacity < 0.5
     mask = np.zeros_like(opacity)
     mask[inpaint] = 255
-    dir_mask = os.path.join(dir_out, 'panorama/mask')
-    os.makedirs(dir_mask, exist_ok=True)
-    imageio.imsave(os.path.join(dir_mask, '0.png'), mask)
+    imageio.imsave(os.path.join(OUTPUT_DIR, 'mask.png'), mask)
 
     # validate sample_panorama
     # rgb = torch.FloatTensor(rgb).to(device) / 255
@@ -271,6 +280,7 @@ def test_render_panorama(hparams):
     # print('Diff of rgb & samples:', torch.sum(torch.abs(rgb-samples)))
     # samples = (samples * 255).cpu().numpy().astype(np.uint8)
     # imageio.imsave(os.path.join(dir_out, 'samples.png'), samples)
+
 
 def test_grid_sample():
     h, w =  10, 20
@@ -291,6 +301,7 @@ def test_grid_sample():
 
     print('out:', out.size())
     print('diff:', torch.sum(torch.abs(out - values)))
+
 
 if __name__ == '__main__':
     hparams = get_opts()

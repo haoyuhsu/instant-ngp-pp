@@ -132,11 +132,9 @@ def reset_scene() -> None:
     """Resets the scene to a clean state."""
     # delete everything that isn't part of a camera or a light
     for obj in bpy.data.objects:
-        if obj.type not in {"CAMERA"}:
-            bpy.data.objects.remove(obj, do_unlink=True)
         # if obj.type not in {"CAMERA", "LIGHT"}:
         #     bpy.data.objects.remove(obj, do_unlink=True)
-        # bpy.data.objects.remove(obj, do_unlink=True)
+        bpy.data.objects.remove(obj, do_unlink=True)
     # delete all the materials
     for material in bpy.data.materials:
         bpy.data.materials.remove(material, do_unlink=True)
@@ -146,8 +144,6 @@ def reset_scene() -> None:
     # delete all the images
     for image in bpy.data.images:
         bpy.data.images.remove(image, do_unlink=True)
-    # clear up object dictionary
-    object_dict.clear()
 
 
 def scene_bbox(single_obj=None, ignore_matrix=False):
@@ -326,68 +322,43 @@ class Camera():
         
         return pose_bl
         
-    # def render_path_rgb(self, cam_list, dir_name='rgb'):
-    #     dir_path = os.path.join(self.out_dir, dir_name)
-    #     os.makedirs(dir_path, exist_ok=True)
-    #     num = len(cam_list)
-    #     for i in range(num):
-    #         cam_info = cam_list[i]
-    #         self.set_camera(cam_info['K'], cam_info['c2w'])
-    #         img_path = os.path.join(dir_path, '{:0>3d}.png'.format(i))
-    #         bpy.context.scene.render.filepath = img_path
-    #         bpy.ops.render.render(use_viewport=True, write_still=True)
-
-    # def render_path_depth(self, cam_list, dir_name='depth'):
-    #     self.initialize_depth_extractor()
-    #     dir_path = os.path.join(self.out_dir, dir_name)
-    #     os.makedirs(dir_path, exist_ok=True)
-    #     num = len(cam_list)
-    #     for i in range(num):
-    #         cam_info = cam_list[i]
-    #         self.set_camera(cam_info['K'], cam_info['c2w'])
-    #         bpy.data.scenes["Scene"].node_tree.nodes["File Output"].base_path = os.path.join(dir_path, '{:0>3d}'.format(i))
-    #         bpy.ops.render.render(use_viewport=True, write_still=True)
-
+    def render_path_rgb(self, cam_list, dir_name='rgb'):
+        dir_path = os.path.join(self.out_dir, dir_name)
+        os.makedirs(dir_path, exist_ok=True)
+        num = len(cam_list)
+        for i in range(num):
+            cam_info = cam_list[i]
+            self.set_camera(cam_info['K'], cam_info['c2w'])
+            img_path = os.path.join(dir_path, '{:0>3d}.png'.format(i))
+            bpy.context.scene.render.filepath = img_path
+            bpy.ops.render.render(use_viewport=True, write_still=True)
+            
     def initialize_depth_extractor(self):
         bpy.context.scene.view_layers["ViewLayer"].use_pass_z = True
         bpy.context.view_layer.cycles.use_denoising = True
         bpy.context.view_layer.cycles.denoising_store_passes = True
         bpy.context.scene.use_nodes = True
-
-        nodes = bpy.context.scene.node_tree.nodes
-        links = bpy.context.scene.node_tree.links
-
-        render_layers = nodes['Render Layers']
-        depth_file_output = nodes.new(type="CompositorNodeOutputFile")
-        depth_file_output.name = 'File Output Depth'
-        depth_file_output.format.file_format = 'OPEN_EXR'
-        links.new(render_layers.outputs[2], depth_file_output.inputs[0])
-
-    def render_path_rgb_and_depth(self, cam_list, dir_name_rgb='rgb', dir_name_depth='depth'):
-        self.initialize_depth_extractor()  # Assuming this is needed for depth rendering setup
-
-        dir_path_rgb = os.path.join(self.out_dir, dir_name_rgb)
-        dir_path_depth = os.path.join(self.out_dir, dir_name_depth)
-        os.makedirs(dir_path_rgb, exist_ok=True)
-        os.makedirs(dir_path_depth, exist_ok=True)
-
+        node_tree = bpy.data.scenes["Scene"].node_tree
+        render_layers = node_tree.nodes['Render Layers']
+        node_tree.nodes.new(type="CompositorNodeOutputFile")
+        file_output = node_tree.nodes['File Output']
+        file_output.format.file_format = 'OPEN_EXR'
+        links = node_tree.links
+        new_link = links.new(render_layers.outputs[2], file_output.inputs[0])
+    
+    def render_path_depth(self, cam_list, dir_name='depth'):
+        self.initialize_depth_extractor()
+        dir_path = os.path.join(self.out_dir, dir_name)
+        os.makedirs(dir_path, exist_ok=True)
         num = len(cam_list)
         for i in range(num):
             cam_info = cam_list[i]
             self.set_camera(cam_info['K'], cam_info['c2w'])
-
-            # Set paths for both RGB and depth outputs
-            depth_output_path = os.path.join(dir_path_depth, '{:0>3d}'.format(i))
-            rgb_output_path = os.path.join(dir_path_rgb, '{:0>3d}.png'.format(i))
-
-            # Assuming your Blender setup has nodes named accordingly
-            bpy.context.scene.render.filepath = rgb_output_path
-            bpy.data.scenes["Scene"].node_tree.nodes["File Output Depth"].base_path = depth_output_path
-
+            bpy.data.scenes["Scene"].node_tree.nodes["File Output"].base_path = os.path.join(dir_path, '{:0>3d}'.format(i))
             bpy.ops.render.render(use_viewport=True, write_still=True)
 
 
-def setup_blender_env(img_width, img_height):
+def setup_blender_env(img_width, img_height, env_map_path):
 
     reset_scene()
 
@@ -400,7 +371,7 @@ def setup_blender_env(img_width, img_height):
     render.resolution_percentage = 100
 
     scene.cycles.device = "GPU"
-    scene.cycles.samples = 512  # 32 for testing, 256 or higher for final
+    scene.cycles.samples = 32  # 32 for testing, 256 or higher for final
     scene.cycles.use_denoising = True
     scene.render.film_transparent = True
     scene.cycles.film_exposure = 2.0
@@ -418,14 +389,12 @@ def setup_blender_env(img_width, img_height):
         d["use"] = 1 # Using all devices, include GPU and CPU
         print(d["name"], d["use"])
 
-    # add_sun_lighting()
+    add_env_lighting(os.path.join('/home/max/Desktop/instant-ngp-pp/', env_map_path), 1.0)
+    add_sun_lighting()
 
     # TODO: figure out why AttributeError: 'WorldLighting' object has no attribute 'use_ambient_occlusion'
     # scene.world.light_settings.use_ambient_occlusion = True  # turn AO on
     # scene.world.light_settings.ao_factor = 0.2  # set it to 0.5
-        
-    # adjust exposure (optional)
-    # render.image_settings.view_settings.exposure = 0.3
 
 
 def add_env_lighting(env_map_path: str, strength: float = 1.0):
@@ -552,19 +521,6 @@ def insert_object(obj_path, pos, rot, scale=1.0):
     return inserted_obj
 
 
-def create_white_material():
-    # Create a new material
-    mat = bpy.data.materials.new(name="WhiteMaterial")
-    mat.use_nodes = True
-    bsdf = mat.node_tree.nodes["Principled BSDF"]
-    bsdf.inputs["Base Color"].default_value = (1, 1, 1, 1)  # White color
-    # make it a diffuse material
-    bsdf.inputs["Metallic"].default_value = 0.0
-    # bsdf.inputs["Specular"].default_value = 0.0  # issue: https://github.com/ross-g/io_pdx_mesh/issues/86
-    bsdf.inputs["Roughness"].default_value = 1.0
-    return mat
-
-
 def add_shadow_catcher(pos, rot, scale=1.0, option='plane', results_dir=None):
     """
     Add shadow catcher to the scene
@@ -579,13 +535,13 @@ def add_shadow_catcher(pos, rot, scale=1.0, option='plane', results_dir=None):
     if option == 'plane':
         # add a plane as shadow catcher
         bpy.ops.mesh.primitive_plane_add()
-        mesh = bpy.context.object
-        mesh.location = pos
-        mesh.scale *= scale * 2.0   # 2.0 to make the plane size larger
-        rotate_obj(mesh, rot)
-        # mesh.is_shadow_catcher = True  # set True for transparent shadow catcher
-        mesh.visible_glossy = False
-        mesh.visible_diffuse = False
+        plane = bpy.context.object
+        plane.location = pos
+        plane.scale *= scale * 2.0   # 2.0 to make the plane size larger
+        rotate_obj(plane, rot)
+        plane.is_shadow_catcher = True
+        plane.visible_glossy = False
+        plane.visible_diffuse = False
     elif option == 'mesh':
         # add meshes extracted from NeRF as shadow catcher
         mesh_path = os.path.join(results_dir, 'meshes.ply')
@@ -593,109 +549,57 @@ def add_shadow_catcher(pos, rot, scale=1.0, option='plane', results_dir=None):
             AssertionError('meshes.ply does not exist')
         bpy.ops.import_mesh.ply(filepath=mesh_path)
         mesh = bpy.context.object
-        # mesh.is_shadow_catcher = True  # set True for transparent shadow catcher
+        mesh.is_shadow_catcher = True
         mesh.visible_glossy = False
         mesh.visible_diffuse = False
-        
-    white_mat = create_white_material()
-    if mesh.data.materials:
-        mesh.data.materials[0] = white_mat
-    else:
-        mesh.data.materials.append(white_mat)
+
+config_path = '/home/max/Desktop/instant-ngp-pp/results/lerf/teatime/blender_cfg.json'
+with open(config_path, 'r') as f:
+    config = json.load(f)
+
+results_dir = config['results_dir']
+h, w = config['im_height'], config['im_width']
+K = np.array(config['K'])
+c2w = np.array(config['c2w'])
+env_map_path = config['env_map_path']
+scene_up_vector = np.array(config['up_vector'])
+insert_object_info = config['insert_object_info']
+
+output_dir = os.path.join(results_dir, 'blend_results')
+os.makedirs(output_dir, exist_ok=True)
+
+setup_blender_env(w, h, env_map_path)
+# align_R = get_alignment_rot(np.array([0, 0, 1]), scene_up_vector)  # No need to align since current camera poses are already aligned
+
+cam = Camera(h, w, output_dir)
+cam_list = create_camera_list(c2w, K)
+
+# insert objects
+for obj_info in insert_object_info:
+    obj_path = os.path.join('/home/max/Desktop/instant-ngp-pp/', obj_info['object_path'])
+    pos = np.array(obj_info['pos'])
+    rot = np.array(obj_info['rot'])
+    # rot = align_R @ rot
+    scale = obj_info['scale']
+    _ = insert_object(obj_path, pos, rot, scale)
+
+bpy.context.view_layer.update()     # Update the scene
 
 
-def run_blender_render(config_path):
-    with open(config_path, 'r') as f:
-        config = json.load(f)
-    results_dir = config['results_dir']
-    traj_results_dir = config['traj_results_dir']
-    h, w = config['im_height'], config['im_width']
-    K = np.array(config['K'])
-    c2w = np.array(config['c2w'])
-    # scene_up_vector = np.array(config['up_vector'])
-    insert_object_info = config['insert_object_info']
+# # render rgb and depth without a shadow catcher
+# cam.render_path_rgb(cam_list, dir_name='rgb')
+# cam.render_path_depth(cam_list, dir_name='depth')
 
-    output_dir = os.path.join(traj_results_dir, 'blend_results')
-    os.makedirs(output_dir, exist_ok=True)
+# add shadow catcher
+for obj_info in insert_object_info:
+    pos = np.array(obj_info['pos'])
+    rot = np.array(obj_info['rot'])
+    # rot = align_R @ rot
+    scale = obj_info['scale']
+    add_shadow_catcher(pos, rot, scale, option='plane')
 
-    # anti-aliasing rendering
-    upscale = 2.0
-    w = int(w * upscale)
-    h = int(h * upscale)
-    for i in range(len(K)):
-        K[i][0, 0] *= upscale
-        K[i][1, 1] *= upscale
-        K[i][0, 2] *= upscale
-        K[i][1, 2] *= upscale
+bpy.context.view_layer.update()     # Update the scene
 
-    setup_blender_env(w, h)
-    # align_R = get_alignment_rot(np.array([0, 0, 1]), scene_up_vector)  # No need to align since current camera poses are already aligned
-
-    cam = Camera(h, w, output_dir)
-    cam_list = create_camera_list(c2w, K)
-
-    # Step 1: insert objects only (for getting object masks)
-    for obj_info in insert_object_info:
-        obj_path = obj_info['object_path']
-        pos = np.array(obj_info['pos'])
-        rot = np.array(obj_info['rot'])
-        scale = obj_info['scale']
-        _ = insert_object(obj_path, pos, rot, scale)
-        env_map_path = obj_info['env_map_path']
-        # add_env_lighting(env_map_path, strength=1.0)
-        add_env_lighting(env_map_path, strength=0.6)
-
-    bpy.context.view_layer.update()     # Update the scene
-
-    # # render rgb and depth without a shadow catcher
-    # cam.render_path_rgb_and_depth(cam_list, dir_name_rgb='rgb_obj', dir_name_depth='depth_obj')
-
-    reset_scene()
-
-    # Step 2: add shadow catcher only (for getting base shadow color)
-    for obj_info in insert_object_info:
-        pos = np.array(obj_info['pos'])
-        rot = np.array(obj_info['rot'])
-        scale = obj_info['scale']
-        add_shadow_catcher(pos, rot, scale, option='plane')
-        # add_shadow_catcher(pos, rot, scale, option='mesh', results_dir=results_dir)
-        env_map_path = obj_info['env_map_path']
-        # add_env_lighting(env_map_path, strength=1.0)
-        add_env_lighting(env_map_path, strength=0.6)
-
-    bpy.context.view_layer.update()     # Update the scene
-
-    # # render rgb and depth without objects
-    # cam.render_path_rgb_and_depth(cam_list, dir_name_rgb='rgb_shadow', dir_name_depth='depth_shadow')
-
-    # Step 3: insert both objects and shadow catcher (shadow catcher has been added in Step 2)
-    for obj_info in insert_object_info:
-        obj_path = obj_info['object_path']
-        pos = np.array(obj_info['pos'])
-        rot = np.array(obj_info['rot'])
-        scale = obj_info['scale']
-        _ = insert_object(obj_path, pos, rot, scale)
-        env_map_path = obj_info['env_map_path']
-        # add_env_lighting(env_map_path, strength=1.0)
-        add_env_lighting(env_map_path, strength=0.6)
-
-    bpy.context.view_layer.update()     # Update the scene
-
-    # render rgb and depth with objects and shadow catcher
-    cam.render_path_rgb_and_depth(cam_list, dir_name_rgb='rgb_obj_shadow', dir_name_depth='depth_obj_shadow')
-
-
-# set directory
-#os.chdir('/home/max/Desktop/instant-ngp-pp/')
-#run_blender_render('/home/max/Desktop/instant-ngp-pp/results/tnt/playground/blender_cfg.json')
-
-
-def run_blender_render_terminal(blender_exec_path, config_path):
-    os.system('export blender={} --background --python vc_rendering.py -- --input_config_path {}'.format(blender_exec_path, config_path))
-
-
-if __name__ == "__main__":
-    parser = ArgumentParserForBlender()
-    parser.add_argument('--input_config_path', type=str, default='')
-    args = parser.parse_args()
-    run_blender_render(args.input_config_path)
+# # render rgb and depth with a shadow catcher
+# cam.render_path_rgb(cam_list, dir_name='rgb_shadow')
+# cam.render_path_depth(cam_list, dir_name='depth_shadow')

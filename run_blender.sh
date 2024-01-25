@@ -1,0 +1,2 @@
+/home/max/Documents/maxhsu/blender-4.0.2-linux-x64/blender --background --python ./blender/vc_rendering.py -- --input_config_path results/lerf/teatime/trajectory_001/blender_cfg.json 
+python blender/blend.py

@@ -10,7 +10,8 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 lmp_planner_cfg = {
     'prompt_fname': 'planner_prompt',
-    'model': 'gpt-4-1106-preview',
+    # 'model': 'gpt-4-1106-preview',
+    'model': 'gpt-4',
     'max_tokens': 512,
     'temperature': 0,
     'query_prefix': '# Query: ',

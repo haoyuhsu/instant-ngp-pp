@@ -3,6 +3,7 @@ import numpy as np
 import os
 import glob
 from tqdm import tqdm
+import json
 
 from .ray_utils import *
 from .color_utils import read_image, read_semantic
@@ -11,11 +12,13 @@ from .colmap_utils import \
 
 from .base import BaseDataset
 
+
 scene_up_vector_dict = {
     'bonsai': [ 0.02405242, -0.77633506, -0.6298614 ],
     'counter': [ 0.07449666, -0.80750495, -0.5851376 ],
     'garden': [-0.03292375, -0.8741887, -0.48446894],
 }
+
 
 scene_scale_dict = {
     'bonsai': 0.58,
@@ -23,9 +26,11 @@ scene_scale_dict = {
     'garden': 2.25,
 }
 
+
 def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
+
 
 def center_poses(poses, pts3d):
     """
@@ -57,7 +62,7 @@ def center_poses(poses, pts3d):
 
 
 class ColmapDataset(BaseDataset):
-    def __init__(self, root_dir, split='train', downsample=1.0, render_train=False, render_interpolate=False, **kwargs):
+    def __init__(self, root_dir, split='train', downsample=1.0, render_train=False, render_interpolate=False, render_traj=False, **kwargs):
         super().__init__(root_dir, split, downsample)
 
         self.read_intrinsics(**kwargs)
@@ -65,7 +70,8 @@ class ColmapDataset(BaseDataset):
         # if kwargs.get('read_meta', True):
         #     self.read_extrinsics(split, **kwargs)
 
-        self.read_extrinsics(split, render_train, render_interpolate, **kwargs)
+        self.read_extrinsics(split, render_train, render_interpolate, render_traj, **kwargs)
+
 
     def read_intrinsics(self, **kwargs):
         # Step 1: read and scale intrinsics (same for all images)
@@ -90,7 +96,8 @@ class ColmapDataset(BaseDataset):
                                     [0,  0,  1]])
         self.directions = get_ray_directions(h, w, self.K, anti_aliasing_factor=kwargs.get('anti_aliasing_factor', 1.0))
 
-    def read_extrinsics(self, split, render_train, render_interpolate, **kwargs):
+
+    def read_extrinsics(self, split, render_train, render_interpolate, render_traj, **kwargs):
         # Step 2: correct poses
         # read extrinsics (of successfully reconstructed images)
         imdata = read_images_binary(os.path.join(self.root_dir, 'sparse/0/images.bin'))
@@ -187,6 +194,15 @@ class ColmapDataset(BaseDataset):
         self.render_traj_rays = None
         if render_train:
             self.render_traj_rays = self.get_path_rays(all_render_c2w)                    # (h*w, 6) --> ray origin + ray direction
+        elif render_traj is not None:
+            with open(render_traj, 'rb') as file:
+                traj_info = json.load(file)
+            self.traj_name = traj_info["trajectory_name"]
+            # extrinsics
+            render_traj_c2w = [frame_info['transform_matrix'] for frame_info in traj_info['frames']]  # (N, 3, 4)
+            render_traj_c2w = torch.FloatTensor(render_traj_c2w)
+            self.c2w = render_traj_c2w
+            self.render_traj_rays = self.get_path_rays(render_traj_c2w)
         else: # training NeRF
             self.rays = torch.FloatTensor(self.read_rgb(img_path_list))
             self.normals = torch.FloatTensor(self.read_normal(normal_path_list))
@@ -195,6 +211,7 @@ class ColmapDataset(BaseDataset):
         self.imgs = img_path_list
 
         self.scene_scale = scene_scale_dict[scene_name]
+
 
     def read_rgb(self, img_path_list):
         """
@@ -213,6 +230,7 @@ class ColmapDataset(BaseDataset):
         rgb_list = np.stack(rgb_list)
         return rgb_list
 
+
     def read_depth(self, depth_path_list):
         """
         Read depth maps from a list of depth paths.
@@ -229,6 +247,7 @@ class ColmapDataset(BaseDataset):
         depth_list = np.stack(depth_list)
         return depth_list
     
+
     def read_normal(self, norm_path_list):
         """
         Read normal maps from a list of normal paths.
@@ -248,6 +267,7 @@ class ColmapDataset(BaseDataset):
             normal_list.append(normal)
         normal_list = np.stack(normal_list)
         return normal_list
+
 
     def get_path_rays(self, render_c2w):
         """

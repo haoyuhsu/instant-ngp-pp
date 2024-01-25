@@ -21,8 +21,10 @@ import glob
 
 from scene_representation import SceneRepresentation
 
+
 MAX_SAMPLES = 1024
 NEAR_DISTANCE = 0.01
+
 
 ###################################
 ##### Adapt from rendering.py #####
@@ -153,6 +155,7 @@ def volume_render(
         rgb += rgb_bg*rearrange(1 - opacity, 'n -> n 1')
 
     return total_samples, results
+
 
 ###################################
 ##### Adapt from rendering.py #####
@@ -593,6 +596,7 @@ def testing_extract_semantic_meshes(hparams, split='train'):
             level=0.2
         )
 
+
 def extract_semantic_meshes(
     scene_representation: SceneRepresentation,
     object_tracking_results_dir: str,
@@ -608,11 +612,15 @@ def extract_semantic_meshes(
     output_path = os.path.join(output_dir, semantic_label + '.ply')
     
     hparams = scene_representation.hparams
+    if not hasattr(scene_representation, 'model'):
+        scene_representation.load_model()
     model = scene_representation.model
     dataset = scene_representation.dataset
     render_traj_rays = dataset.render_traj_rays
     embedding_a = scene_representation.embedding_a
     results_dir = scene_representation.results_dir
+
+    img_file_list = sorted(glob.glob(os.path.join(object_tracking_results_dir, "Annotations", "*.png")))
 
     num_categories = 1
 
@@ -658,7 +666,8 @@ def extract_semantic_meshes(
         if hparams.embed_a:
             render_kwargs['embedding_a'] = embedding_a
         
-        img_path = dataset.imgs[img_idx]
+        # img_path = dataset.imgs[img_idx]
+        img_path = img_file_list[img_idx]
         file_name = img_path.split('/')[-1].split('.')[0]
         semantic_img = Image.open(os.path.join(object_tracking_results_dir, "Annotations", file_name+'.png'))
 

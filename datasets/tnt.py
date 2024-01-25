@@ -5,26 +5,31 @@ import os
 from PIL import Image
 from einops import rearrange
 from tqdm import tqdm
+import json
 
 from .ray_utils import *
 from .color_utils import read_image, read_normal, read_normal_up, read_semantic
 
 from .base import BaseDataset
 
+
 scene_up_vector_dict = {
     'Playground': [-0.00720354, -0.9963133, -0.08548705],
 }
+
 
 scene_scale_dict = {
     'Playground': 8.0,
 }
 
+
 def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
 
+
 class tntDataset(BaseDataset):
-    def __init__(self, root_dir, split='train', downsample=1.0, cam_scale_factor=0.95, render_train=False, render_interpolate=False, **kwargs):
+    def __init__(self, root_dir, split='train', downsample=1.0, cam_scale_factor=0.95, render_train=False, render_interpolate=False, render_traj=False, **kwargs):
         super().__init__(root_dir, split, downsample)
 
         # custom sorting for tnt dataset
@@ -123,6 +128,15 @@ class tntDataset(BaseDataset):
         self.render_traj_rays = None
         if render_train:
             self.render_traj_rays = self.get_path_rays(all_render_c2w)                    # (h*w, 6) --> ray origin + ray direction
+        elif render_traj is not None:
+            with open(render_traj, 'rb') as file:
+                traj_info = json.load(file)
+            self.traj_name = traj_info["trajectory_name"]
+            # extrinsics
+            render_traj_c2w = [frame_info['transform_matrix'] for frame_info in traj_info['frames']]  # (N, 3, 4)
+            render_traj_c2w = torch.FloatTensor(render_traj_c2w)
+            self.c2w = render_traj_c2w
+            self.render_traj_rays = self.get_path_rays(render_traj_c2w)
         else: # training NeRF
             self.rays = torch.FloatTensor(self.read_rgb(img_path_list))
             self.normals = torch.FloatTensor(self.read_normal(normal_path_list))
@@ -131,6 +145,7 @@ class tntDataset(BaseDataset):
         self.imgs = img_path_list
 
         self.scene_scale = scene_scale_dict[scene_name]
+
 
     def read_rgb(self, img_path_list):
         """
@@ -149,6 +164,7 @@ class tntDataset(BaseDataset):
         rgb_list = np.stack(rgb_list)
         return rgb_list
 
+
     def read_depth(self, depth_path_list):
         """
         Read depth maps from a list of depth paths.
@@ -165,6 +181,7 @@ class tntDataset(BaseDataset):
         depth_list = np.stack(depth_list)
         return depth_list
     
+
     def read_normal(self, norm_path_list):
         """
         Read normal maps from a list of normal paths.
@@ -185,6 +202,7 @@ class tntDataset(BaseDataset):
         normal_list = np.stack(normal_list)
         return normal_list
     
+
     def get_path_rays(self, render_c2w):
         """
         Get rays from a list of camera poses.
@@ -203,7 +221,6 @@ class tntDataset(BaseDataset):
                 get_rays(self.directions, torch.FloatTensor(c2w))
             rays[idx] = torch.cat([rays_o, rays_d], 1).cpu() # (h*w, 6)
         return rays
-
 
 
 if __name__ == '__main__':

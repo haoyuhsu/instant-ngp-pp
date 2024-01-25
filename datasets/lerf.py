@@ -12,6 +12,7 @@ from .color_utils import read_image, read_normal, read_normal_up, read_semantic
 
 from .base import BaseDataset
 
+
 scene_up_vector_dict = {
     'donuts': [0.0, 0.0, 1.0],
     'dozer_nerfgun_waldo': [-0.76060444, 0.00627117, 0.6491853 ],
@@ -22,6 +23,7 @@ scene_up_vector_dict = {
     'teatime': [0.0, 0.0, 1.0],
     'waldo_kitchen': [0.0, 0.0, 1.0],
 }
+
 
 scene_scale_dict = {
     'donuts': 1.0,
@@ -34,12 +36,14 @@ scene_scale_dict = {
     'waldo_kitchen': 3.2,
 }
 
+
 def normalize(v):
     """Normalize a vector."""
     return v/np.linalg.norm(v)
 
+
 class LeRFDataset(BaseDataset):
-    def __init__(self, root_dir, split='train', downsample=1.0, cam_scale_factor=0.95, render_train=False, render_interpolate=False, **kwargs):
+    def __init__(self, root_dir, split='train', downsample=1.0, cam_scale_factor=0.95, render_train=False, render_interpolate=False, render_traj=False, **kwargs):
         super().__init__(root_dir, split, downsample)
 
         # read poses and intrinsics of each frame from json file
@@ -68,7 +72,7 @@ class LeRFDataset(BaseDataset):
         # print(len(meta['frames']), len(imgs))
 
         # using only a subset of images for testing
-        if split == 'test' and not render_train:
+        if split == 'test' and not render_train and not render_traj:
             meta['frames'] = meta['frames'][:20]
 
         img_path_list = [os.path.join(root_dir, frame_info['file_path']) for frame_info in meta['frames']]
@@ -157,6 +161,25 @@ class LeRFDataset(BaseDataset):
         self.render_traj_rays = None
         if render_train:
             self.render_traj_rays = self.get_path_rays(all_render_c2w)                    # (h*w, 6) --> ray origin + ray direction
+        elif render_traj is not None:
+            with open(render_traj, 'rb') as file:
+                traj_info = json.load(file)
+            self.traj_name = traj_info["trajectory_name"]
+            # intrinsics
+            fx, fy, cx, cy = traj_info['fl_x'], traj_info['fl_y'], traj_info['cx'], traj_info['cy']
+            cam_K = np.array([
+                [fx, 0, cx], 
+                [0, fy, cy],
+                [0, 0, 1]]
+            )
+            direction = get_ray_directions(h, w, cam_K, anti_aliasing_factor=kwargs.get('anti_aliasing_factor', 1.0))
+            self.K = torch.stack([torch.from_numpy(cam_K) for _ in range(len(traj_info['frames']))])
+            self.directions = torch.stack([direction for _ in range(len(traj_info['frames']))])
+            # extrinsics
+            render_traj_c2w = [frame_info['transform_matrix'] for frame_info in traj_info['frames']]  # (N, 3, 4)
+            render_traj_c2w = torch.FloatTensor(render_traj_c2w)
+            self.c2w = render_traj_c2w
+            self.render_traj_rays = self.get_path_rays(render_traj_c2w)
         else: # training NeRF
             self.rays = torch.FloatTensor(self.read_rgb(img_path_list))
             self.normals = torch.FloatTensor(self.read_normal(normal_path_list))
@@ -165,6 +188,7 @@ class LeRFDataset(BaseDataset):
         self.imgs = img_path_list
 
         self.scene_scale = scene_scale_dict[scene_name]
+    
     
     def read_rgb(self, img_path_list):
         """
@@ -183,6 +207,7 @@ class LeRFDataset(BaseDataset):
         rgb_list = np.stack(rgb_list)
         return rgb_list
 
+
     def read_depth(self, depth_path_list):
         """
         Read depth maps from a list of depth paths.
@@ -199,6 +224,7 @@ class LeRFDataset(BaseDataset):
         depth_list = np.stack(depth_list)
         return depth_list
     
+
     def read_normal(self, norm_path_list):
         """
         Read normal maps from a list of normal paths.
@@ -219,6 +245,7 @@ class LeRFDataset(BaseDataset):
         normal_list = np.stack(normal_list)
         return normal_list
     
+
     def get_path_rays(self, render_c2w):
         """
         Get rays from a list of camera poses.
@@ -237,6 +264,7 @@ class LeRFDataset(BaseDataset):
                 get_rays(self.directions[idx], torch.FloatTensor(c2w))
             rays[idx] = torch.cat([rays_o, rays_d], 1).cpu() # (h*w, 6)
         return rays
+
 
 if __name__ == '__main__':
     import pickle 

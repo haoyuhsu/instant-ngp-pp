@@ -91,8 +91,8 @@ def get_opts():
                         help='run only validation (need to provide ckpt_path)')
     parser.add_argument('--no_save_test', action='store_true', default=False,
                         help='whether to save test image and video')
-    parser.add_argument('--render_traj', action='store_true', default=False,
-                        help='render video on a trajectory')
+    parser.add_argument('--render_traj', type=str, default=None,
+                        help='render video on a custom trajectory in a .json file')
     parser.add_argument('--render_train', action='store_true', default=False,
                         help='render from training views')
     parser.add_argument('--render_interpolate', action='store_true', default=False,

@@ -10,10 +10,14 @@ import glob
 from PIL import Image
 from gpt.estimate_scale import estimate_object_scale
 
+
 '''
 Wrapper of the modular functions for GPT model to call
 '''
 
+
+# TODO: use an anchored view
+# TODO: implement other versions of object localization without extracting semantic meshes
 def get_object_3d_location(scene_representation, object_name, N_SAMPLES=2000):
     print("Localizing object: {}".format(object_name))
     obj_mesh_path = None
@@ -27,7 +31,7 @@ def get_object_3d_location(scene_representation, object_name, N_SAMPLES=2000):
         # integrate Tracking-with-DEVA & extract_semantic_mesh.py
         object_tracking_results_dir = os.path.join(scene_representation.tracking_results_dir, object_name)
         os.makedirs(object_tracking_results_dir, exist_ok=True)
-        run_deva(scene_representation.dataset.imgs_dir, object_tracking_results_dir, object_name)
+        run_deva(os.path.join(scene_representation.traj_results_dir, 'frames'), object_tracking_results_dir, object_name)
         obj_mesh_path = extract_semantic_meshes(scene_representation, object_tracking_results_dir)
         if obj_mesh_path is None:
             raise ValueError("Mesh extraction failed for object {}.".format(object_name))
@@ -36,10 +40,12 @@ def get_object_3d_location(scene_representation, object_name, N_SAMPLES=2000):
     mesh = o3d.io.read_triangle_mesh(obj_mesh_path)
     mesh.compute_vertex_normals()
     # randomly sample points on the mesh surface if the mesh is facing upwards
-    upwards = scene_representation.up_vector
+    # upwards = scene_representation.up_vector
+    upwards = np.array([0, 0, 1])
     vertices = np.asarray(mesh.vertices)[np.dot(np.array(mesh.vertex_normals), upwards) > math.cos(math.radians(30))]
     sampled_vertices = vertices[np.random.choice(vertices.shape[0], N_SAMPLES, replace=False)]
     return sampled_vertices
+
 
 def get_3d_asset(object_name):
     obj_info = retrieve_object_from_objaverse(object_name)
@@ -53,7 +59,7 @@ def get_3d_asset(object_name):
 
     # Render the object in Blender
     os.system('{} --background --python ./blender/asset_rendering.py -- --object_file={} --output_dir={}'.format( \
-        '/snap/bin/blender', \
+        '/home/max/Documents/maxhsu/blender-4.0.2-linux-x64/blender', \
         obj_info['object_path'], \
         './blender/images'
     ))
@@ -62,13 +68,14 @@ def get_3d_asset(object_name):
     img_path = np.random.choice(img_path_list)
 
     # Estimate the scale of the object by GPT4 API
-    object_scale = estimate_object_scale(img_path, obj_info['object_name'])  # use both rendered image and object name
-    # object_scale = estimate_object_scale(None, obj_info['object_name'])        # use only object name
+    # object_scale = estimate_object_scale(img_path, obj_info['object_name'])  # use both rendered image and object name
+    object_scale = estimate_object_scale(None, obj_info['object_name'])        # use only object name
     # object_scale = estimate_object_scale(img_path, None)                  # use only rendered image
     obj_info['object_scale'] = object_scale
     print("Estimated scale of {} is {} meters.".format(obj_info['object_name'], object_scale))
 
     return obj_info
+
 
 def put_object_in_scene(scene_representation, object_info, object_locations):
     print("Inserting object: {}".format(object_info['object_name']))
@@ -82,9 +89,11 @@ def put_object_in_scene(scene_representation, object_info, object_locations):
     scene_representation.insert_object(new_object_info)
     print("Inserted object {} into scene at {}.".format(new_object_info['object_name'], selected_positions))
 
+
 def change_object_texture(obj, texture_name):
     print("Texturing object {} into {}".format(obj, texture_name))
     return obj
+
 
 if __name__ == '__main__':
     from scene_representation import SceneRepresentation
